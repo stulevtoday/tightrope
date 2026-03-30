@@ -1,0 +1,9 @@
+build/
+build-debug/
+node_modules/
+dist/
+*.node
+.DS_Store
+compile_commands.json
+vcpkg_installed/
+vcpkg/

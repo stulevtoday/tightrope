@@ -1,0 +1,14 @@
+{
+  "fixture_id": "health",
+  "source": "codex-lb-source-contracts",
+  "request": {
+    "method": "GET",
+    "path": "/health",
+    "auth_mode": "none"
+  },
+  "response_contract": {
+    "success_status": 200,
+    "response_model": "HealthResponse",
+    "body_keys": ["status"]
+  }
+}

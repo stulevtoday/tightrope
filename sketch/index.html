@@ -1,0 +1,4978 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tightrope — Routing Workbench</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23161714'/%3E%3Cpath d='M3 8h10M8 3v10' stroke='%237aab9c' stroke-width='1.3'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #131514;
+        --surface-1: #191b19;
+        --surface-2: #1e201e;
+        --surface-3: #242624;
+        --recessed: #111311;
+        --border: rgba(255, 255, 255, 0.06);
+        --border-strong: rgba(255, 255, 255, 0.1);
+        --text: #cdd0ca;
+        --text-secondary: #7d817a;
+        --text-tertiary: #575b55;
+        --accent: #7aab9c;
+        --accent-dim: rgba(122, 171, 156, 0.08);
+        --accent-border: rgba(122, 171, 156, 0.2);
+        --ok: #6a9e78;
+        --warn: #b08f4e;
+        --danger: #a25a4f;
+        --radius-sm: 3px;
+        --radius-md: 5px;
+        --radius-lg: 8px;
+        --gap-fill: rgba(255, 255, 255, 0.04);
+        --hover-fill: rgba(255, 255, 255, 0.025);
+        --input-bg: rgba(255, 255, 255, 0.04);
+        --titlebar-border: rgba(255, 255, 255, 0.15);
+        --scrollbar-thumb: rgba(255, 255, 255, 0.08);
+        --scrollbar-hover: rgba(255, 255, 255, 0.14);
+      }
+
+      :root[data-theme="light"] {
+        --bg: #eae8e3;
+        --surface-1: #f4f2ee;
+        --surface-2: #faf9f6;
+        --surface-3: #efede8;
+        --recessed: #e2e0db;
+        --border: rgba(0, 0, 0, 0.08);
+        --border-strong: rgba(0, 0, 0, 0.13);
+        --text: #2a2d28;
+        --text-secondary: #6b6e66;
+        --text-tertiary: #9a9d96;
+        --accent: #4d8272;
+        --accent-dim: rgba(77, 130, 114, 0.07);
+        --accent-border: rgba(77, 130, 114, 0.2);
+        --ok: #3d7a4d;
+        --warn: #8a6c30;
+        --danger: #8e4940;
+        --gap-fill: rgba(0, 0, 0, 0.04);
+        --hover-fill: rgba(0, 0, 0, 0.025);
+        --input-bg: rgba(0, 0, 0, 0.04);
+        --titlebar-border: rgba(0, 0, 0, 0.1);
+        --scrollbar-thumb: rgba(0, 0, 0, 0.1);
+        --scrollbar-hover: rgba(0, 0, 0, 0.18);
+      }
+
+      :root[data-theme="light"] .status-badge.ok {
+        color: #2e6b3c;
+        border-color: rgba(61, 122, 77, 0.25);
+        background: rgba(61, 122, 77, 0.08);
+      }
+
+      :root[data-theme="light"] .status-badge.warn {
+        color: #6e5520;
+        border-color: rgba(138, 108, 48, 0.25);
+        background: rgba(138, 108, 48, 0.08);
+      }
+
+      :root[data-theme="light"] .status-badge.error {
+        color: #7a3630;
+        border-color: rgba(142, 73, 64, 0.25);
+        background: rgba(142, 73, 64, 0.08);
+      }
+
+      :root[data-theme="light"] .kind-badge.prompt-cache {
+        color: #5c5c80;
+        background: rgba(92, 92, 128, 0.08);
+      }
+
+      :root[data-theme="light"] .routed-badge {
+        color: #2e6b3c;
+        background: rgba(61, 122, 77, 0.08);
+        border-color: rgba(61, 122, 77, 0.2);
+      }
+
+      :root[data-theme="light"] .mini-fill {
+        background: var(--accent);
+      }
+
+      :root[data-theme="light"] .setting-toggle::after {
+        background: #fff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font-size: 13px;
+        color: var(--text);
+        background: var(--bg);
+        display: grid;
+        place-items: center;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      /* ── Window ── */
+
+      .window {
+        width: min(1540px, 96vw);
+        height: min(940px, 94vh);
+        background: var(--surface-1);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 34px minmax(0, 1fr);
+      }
+
+      /* ── Titlebar ── */
+
+      .titlebar {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0 0.85rem;
+        background: var(--recessed);
+        border-bottom: 1px solid var(--border);
+        user-select: none;
+        font-size: 12px;
+      }
+
+      .titlecopy {
+        display: flex;
+        align-items: baseline;
+        gap: 0.5rem;
+      }
+
+      .titlecopy strong {
+        font-weight: 550;
+        color: var(--text-secondary);
+        letter-spacing: 0.01em;
+      }
+
+      .titlecopy span {
+        color: var(--text-tertiary);
+        font-size: 11px;
+      }
+
+      /* ── Shell ── */
+
+      .app-shell {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 216px minmax(0, 1fr);
+      }
+
+      /* ── Nav Rail ── */
+
+      .nav-rail {
+        min-height: 0;
+        background: var(--surface-1);
+        border-right: 1px solid var(--border);
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 0.7rem;
+        padding: 0.65rem;
+      }
+
+      .brand {
+        display: grid;
+        gap: 0.2rem;
+        padding: 0.1rem 0.15rem 0.55rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand-line {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .brand-mark {
+        width: 24px;
+        height: 24px;
+        border-radius: var(--radius-sm);
+        background: var(--accent);
+        opacity: 0.6;
+        flex-shrink: 0;
+      }
+
+      .brand strong {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .brand span {
+        display: block;
+        color: var(--text-secondary);
+        font-size: 11px;
+        line-height: 1.35;
+      }
+
+      .brand small {
+        display: none;
+      }
+
+      .rail-group {
+        display: grid;
+        gap: 1px;
+      }
+
+      .rail-label {
+        margin: 0 0 0.25rem;
+        padding: 0 0.3rem;
+        color: var(--text-tertiary);
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .nav-item {
+        border: 1px solid transparent;
+        border-radius: var(--radius-md);
+        background: transparent;
+        text-align: left;
+        padding: 0.38rem 0.48rem;
+        cursor: pointer;
+        display: grid;
+        gap: 0.08rem;
+        transition: background 100ms ease;
+      }
+
+      .nav-item strong {
+        font-size: 12.5px;
+        font-weight: 520;
+      }
+
+      .nav-item span {
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      .nav-item.active {
+        background: var(--accent-dim);
+        border-color: var(--accent-border);
+      }
+
+      .nav-item:hover:not(.active) {
+        background: var(--hover-fill);
+      }
+
+      .rail-foot {
+        display: grid;
+        gap: 0.35rem;
+        align-content: end;
+        padding-top: 0.55rem;
+        border-top: 1px solid var(--border);
+      }
+
+      .foot-row {
+        display: grid;
+        gap: 0.02rem;
+      }
+
+      .foot-row span {
+        color: var(--text-tertiary);
+        font-size: 10.5px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .foot-row strong {
+        font-size: 11.5px;
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
+
+      /* ── Workspace ── */
+
+      .workspace {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        background: var(--bg);
+      }
+
+      .tool-strip {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.6rem;
+        align-items: start;
+        padding: 0.5rem 0.65rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface-1);
+      }
+
+      .tool-context,
+      .tool-actions {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+        min-width: 0;
+      }
+
+      .router-state {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.32rem 0.5rem;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        background: var(--surface-2);
+      }
+
+      .router-state-copy {
+        min-width: 0;
+        display: grid;
+        gap: 0.02rem;
+      }
+
+      .router-state-copy strong {
+        font-size: 12px;
+        font-weight: 550;
+      }
+
+      .router-state-copy span {
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      .state-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--ok);
+        flex: 0 0 auto;
+      }
+
+      .router-state[data-state="paused"] .state-dot {
+        background: var(--warn);
+      }
+
+      .router-state[data-state="stopped"] .state-dot,
+      .router-state[data-state="degraded"] .state-dot {
+        background: var(--danger);
+      }
+
+      .tool-chip {
+        min-width: 0;
+        padding: 0.32rem 0.48rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface-2);
+        display: grid;
+        gap: 0.02rem;
+      }
+
+      .tool-chip span {
+        color: var(--text-tertiary);
+        font-size: 10.5px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .tool-chip strong {
+        font-size: 12px;
+        font-weight: 500;
+        overflow-wrap: anywhere;
+      }
+
+      .search {
+        width: 240px;
+        max-width: 100%;
+        min-width: 0;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        background: var(--recessed);
+        color: var(--text);
+        padding: 0.38rem 0.5rem;
+        font-size: 12px;
+        outline: none;
+        transition: border-color 100ms ease;
+      }
+
+      .search::placeholder {
+        color: var(--text-tertiary);
+      }
+
+      .search:focus-visible,
+      .tool-btn:focus-visible,
+      .account-item:focus-visible,
+      .route-row:focus-visible,
+      .mode-btn:focus-visible,
+      .dock-btn:focus-visible,
+      .nav-item:focus-visible,
+      .auth-input:focus-visible {
+        border-color: var(--accent);
+        outline: none;
+      }
+
+      .tool-btn,
+      .dock-btn,
+      .mode-btn {
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        background: var(--surface-3);
+        color: var(--text);
+        padding: 0.36rem 0.55rem;
+        font-size: 12px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 100ms ease, border-color 100ms ease;
+      }
+
+      .tool-btn:hover,
+      .dock-btn:hover,
+      .mode-btn:hover {
+        background: var(--surface-3);
+        border-color: var(--titlebar-border);
+      }
+
+      .tool-btn.accent,
+      .dock-btn.accent,
+      .mode-btn.active {
+        background: var(--accent-dim);
+        border-color: var(--accent-border);
+        color: var(--accent);
+      }
+
+      .tool-sep {
+        width: 1px;
+        align-self: stretch;
+        background: var(--border);
+        margin: 0 0.1rem;
+      }
+
+      /* ── Workbench ── */
+
+      .workbench {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) 168px;
+        gap: 1px;
+        background: var(--gap-fill);
+      }
+
+      .route-stage {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 286px minmax(0, 1fr);
+        grid-template-areas: "objects ledger";
+        gap: 1px;
+        background: var(--gap-fill);
+      }
+
+      .route-stage.inspector-open {
+        grid-template-columns: 286px minmax(0, 1fr) 310px;
+        grid-template-areas: "objects ledger details";
+      }
+
+      .pane {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        background: var(--surface-2);
+      }
+
+      .object-pane {
+        grid-area: objects;
+      }
+
+      .ledger-pane {
+        grid-area: ledger;
+      }
+
+      .detail-pane {
+        grid-area: details;
+        background: var(--surface-3);
+        display: none;
+      }
+
+      .route-stage.inspector-open .detail-pane {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      .section-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.6rem;
+        padding: 0.5rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .section-header h1,
+      .section-header h2,
+      .section-header h3 {
+        margin: 0;
+        font-size: 12.5px;
+        font-weight: 550;
+      }
+
+      .eyebrow {
+        margin: 0 0 0.08rem;
+        color: var(--text-tertiary);
+        font-size: 10.5px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .header-meta,
+      .status-pill,
+      .filter-chip,
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        padding: 0.12rem 0.35rem;
+        font-size: 11px;
+        color: var(--text-secondary);
+        background: var(--surface-1);
+        white-space: nowrap;
+      }
+
+      .status-badge.ok {
+        color: #a8ccb0;
+        border-color: rgba(106, 158, 120, 0.22);
+        background: rgba(106, 158, 120, 0.07);
+      }
+
+      .status-badge.warn {
+        color: #ccba94;
+        border-color: rgba(176, 143, 78, 0.22);
+        background: rgba(176, 143, 78, 0.07);
+      }
+
+      .status-badge.error {
+        color: #cca099;
+        border-color: rgba(162, 90, 79, 0.22);
+        background: rgba(162, 90, 79, 0.07);
+      }
+
+      .pane-body {
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        padding: 0.55rem;
+      }
+
+      .object-pane .pane-body,
+      .detail-pane .pane-body {
+        overflow-x: hidden;
+      }
+
+      .accounts-list,
+      .detail-stack,
+      .field-stack {
+        display: grid;
+        gap: 0.3rem;
+      }
+
+      .account-item {
+        width: 100%;
+        min-width: 0;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface-1);
+        text-align: left;
+        padding: 0.45rem 0.5rem;
+        cursor: pointer;
+        display: grid;
+        gap: 0.28rem;
+        transition: background 100ms ease, border-color 100ms ease;
+      }
+
+      .account-item:hover {
+        background: var(--surface-3);
+        border-color: var(--border-strong);
+      }
+
+      .account-item.active {
+        background: var(--accent-dim);
+        border-color: var(--accent-border);
+      }
+
+      .account-item.routed {
+        box-shadow: inset 3px 0 0 var(--ok);
+      }
+
+      .routed-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        font-size: 9.5px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--ok);
+        background: rgba(106, 158, 120, 0.1);
+        border: 1px solid rgba(106, 158, 120, 0.18);
+        border-radius: 3px;
+        padding: 0.05rem 0.3rem;
+        line-height: 1.4;
+      }
+
+      .routed-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--ok);
+        animation: routed-pulse 2s ease-in-out infinite;
+      }
+
+      @keyframes routed-pulse {
+        0%, 100% { opacity: 0.4; transform: scale(0.85); }
+        50% { opacity: 1; transform: scale(1.15); }
+      }
+
+      .account-top,
+      .account-meta-row,
+      .quota-row,
+      .weight-row,
+      .key-row,
+      .log-row,
+      .check-row,
+      .field-row,
+      .summary-grid div {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.35rem;
+        align-items: start;
+        min-width: 0;
+      }
+
+      .account-name {
+        font-size: 12px;
+        font-weight: 520;
+        overflow-wrap: anywhere;
+      }
+
+      .account-plan,
+      .account-meta,
+      .key-label,
+      .dock-label,
+      .field-label,
+      .summary-grid span {
+        color: var(--text-secondary);
+        font-size: 11px;
+      }
+
+      .account-meta strong,
+      .summary-grid strong,
+      .key-value,
+      .field-note,
+      .log-row strong,
+      .check-row strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .mini-bar,
+      .meter-track,
+      .quota-track {
+        height: 3px;
+        border-radius: 2px;
+        background: var(--recessed);
+        overflow: hidden;
+      }
+
+      .mini-fill,
+      .meter-fill,
+      .quota-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: var(--accent);
+        opacity: 0.6;
+      }
+
+      .mini-fill.hot,
+      .quota-fill.hot,
+      .meter-fill.hot {
+        background: var(--danger);
+        opacity: 0.75;
+      }
+
+      /* ── Ledger ── */
+
+      .ledger-body {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 0.4rem;
+      }
+
+      .ops-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        background: var(--border);
+      }
+
+      .metric {
+        background: var(--surface-1);
+        padding: 0.35rem 0.45rem;
+        display: grid;
+        gap: 0.08rem;
+      }
+
+      .metric span {
+        color: var(--text-tertiary);
+        font-size: 10.5px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      .ledger-header {
+        align-items: center;
+      }
+
+      .protocol-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.2rem;
+        justify-content: flex-end;
+      }
+
+      .filter-chip.active {
+        color: var(--text);
+        border-color: var(--accent-border);
+        background: var(--accent-dim);
+      }
+
+      .table-wrap {
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--recessed);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 820px;
+      }
+
+      thead {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--surface-2);
+      }
+
+      th,
+      td {
+        padding: 0.35rem 0.45rem;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        font-size: 11.5px;
+        white-space: nowrap;
+      }
+
+      th {
+        color: var(--text-tertiary);
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .route-row {
+        cursor: pointer;
+      }
+
+      .route-row:hover {
+        background: var(--hover-fill);
+      }
+
+      .route-row.active {
+        background: rgba(122, 171, 156, 0.06);
+      }
+
+      .route-row.match {
+        box-shadow: inset 2px 0 0 var(--accent);
+      }
+
+      .route-row td.account-cell,
+      .route-row td.model-cell {
+        overflow-wrap: anywhere;
+      }
+
+      .empty-state {
+        padding: 0.75rem;
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+
+      /* ── Detail Pane ── */
+
+      .detail-section {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface-2);
+        padding: 0.5rem;
+        display: grid;
+        gap: 0.35rem;
+      }
+
+      .detail-fold {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface-2);
+        overflow: hidden;
+      }
+
+      .detail-fold summary {
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.5rem;
+      }
+
+      .detail-fold summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .detail-fold summary strong {
+        font-size: 12px;
+        font-weight: 550;
+      }
+
+      .detail-fold summary span {
+        color: var(--text-tertiary);
+        font-size: 11px;
+      }
+
+      .detail-fold[open] summary {
+        border-bottom: 1px solid var(--border);
+      }
+
+      .fold-content {
+        display: grid;
+        gap: 0.35rem;
+        padding: 0.5rem;
+      }
+
+      .detail-heading {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        align-items: baseline;
+      }
+
+      .detail-heading strong {
+        font-size: 12px;
+        font-weight: 550;
+      }
+
+      .detail-heading span {
+        color: var(--text-tertiary);
+        font-size: 11px;
+      }
+
+      .key-grid,
+      .summary-grid,
+      .status-grid {
+        display: grid;
+        gap: 0.2rem;
+      }
+
+      .key-row {
+        font-size: 11.5px;
+      }
+
+      .key-label {
+        letter-spacing: 0.02em;
+      }
+
+      .key-value {
+        overflow-wrap: anywhere;
+        text-align: right;
+      }
+
+      .mode-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.2rem;
+      }
+
+      .mode-btn {
+        text-align: left;
+        font-size: 11.5px;
+      }
+
+      .weight-stack {
+        display: grid;
+        gap: 0.2rem;
+      }
+
+      .weight-row {
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      .weight-row label {
+        color: var(--text);
+      }
+
+      input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      /* ── Events Panel ── */
+
+      .events-panel {
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        background: var(--surface-2);
+      }
+
+      .events-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.45rem 0.65rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .events-header h3 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 550;
+      }
+
+      .events-body {
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        padding: 0.45rem 0.65rem;
+        font-family: "SF Mono", "SFMono-Regular", ui-monospace, Consolas, monospace;
+        font-size: 11.5px;
+        line-height: 1.65;
+        background: var(--recessed);
+      }
+
+      .log-line {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .log-line .log-ts {
+        color: var(--text-tertiary);
+        margin-right: 0.6em;
+      }
+
+      .log-line .log-msg {
+        color: var(--text-secondary);
+      }
+
+      .note-box {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 0.38rem 0.45rem;
+        color: var(--text-secondary);
+        font-size: 11.5px;
+        line-height: 1.4;
+        background: var(--surface-1);
+      }
+
+      .footnote {
+        color: var(--text-secondary);
+        font-size: 11px;
+        line-height: 1.35;
+      }
+
+      .mono {
+        font-family: "SF Mono", "SFMono-Regular", ui-monospace, Consolas, monospace;
+        font-size: 0.92em;
+      }
+
+      /* ── Dialogs ── */
+
+      dialog {
+        background: var(--surface-2);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-lg);
+        color: var(--text);
+        padding: 0;
+        width: min(480px, 90vw);
+        max-height: 80vh;
+        overflow: hidden;
+      }
+
+      dialog::backdrop {
+        background: rgba(0, 0, 0, 0.55);
+      }
+
+      .dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .dialog-header h3 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 550;
+      }
+
+      .dialog-close {
+        border: none;
+        background: none;
+        color: var(--text-tertiary);
+        cursor: pointer;
+        padding: 0.2rem;
+        font-size: 16px;
+        line-height: 1;
+      }
+
+      .dialog-close:hover {
+        color: var(--text);
+      }
+
+      .dialog-body {
+        padding: 0.65rem 0.75rem;
+        overflow: auto;
+        max-height: calc(80vh - 48px);
+        display: grid;
+        gap: 0.5rem;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.2rem;
+      }
+
+      .summary-grid div,
+      .status-grid div {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 0.25rem 0.35rem;
+        background: var(--surface-1);
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.2rem;
+      }
+
+      .check-row {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface-1);
+        padding: 0.3rem 0.38rem;
+      }
+
+      .check-left {
+        display: grid;
+        gap: 0.04rem;
+        min-width: 0;
+      }
+
+      .check-left span {
+        color: var(--text-secondary);
+        font-size: 10.5px;
+      }
+
+      .field-row {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--surface-1);
+        padding: 0.3rem 0.38rem;
+      }
+
+      .auth-input {
+        width: 100%;
+        min-width: 0;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: var(--recessed);
+        color: var(--text);
+        padding: 0.32rem 0.42rem;
+        font-size: 12px;
+        outline: none;
+      }
+
+      /* ── Add Account Dialog ── */
+
+      #addAccountDialog {
+        width: min(440px, 90vw);
+      }
+
+      .step { display: none; }
+      .step.active { display: block; }
+
+      .method-list {
+        display: grid;
+        gap: 0.3rem;
+      }
+
+      .method-option {
+        width: 100%;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        background: var(--surface-1);
+        color: var(--text);
+        text-align: left;
+        padding: 0.6rem 0.7rem;
+        cursor: pointer;
+        display: grid;
+        gap: 0.15rem;
+        transition: background 100ms ease, border-color 100ms ease;
+      }
+
+      .method-option:hover {
+        background: var(--surface-3);
+        border-color: var(--titlebar-border);
+      }
+
+      .method-option strong {
+        font-size: 13px;
+        font-weight: 550;
+      }
+
+      .method-option span {
+        font-size: 11.5px;
+        color: var(--text-secondary);
+      }
+
+      .method-option .method-tag {
+        display: inline-block;
+        font-size: 10px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-left: 0.4em;
+        font-weight: 500;
+      }
+
+      .file-drop {
+        border: 1px dashed var(--border-strong);
+        border-radius: var(--radius-md);
+        background: var(--recessed);
+        padding: 1.8rem 1rem;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 100ms ease;
+      }
+
+      .file-drop:hover,
+      .file-drop.dragover {
+        border-color: var(--accent);
+      }
+
+      .file-drop p {
+        margin: 0;
+        color: var(--text-secondary);
+        font-size: 12.5px;
+      }
+
+      .file-drop small {
+        display: block;
+        margin-top: 0.3rem;
+        color: var(--text-tertiary);
+        font-size: 11px;
+      }
+
+      .file-drop input[type="file"] {
+        display: none;
+      }
+
+      .file-name {
+        margin-top: 0.4rem;
+        font-size: 12px;
+        color: var(--accent);
+        font-family: "SF Mono", ui-monospace, monospace;
+      }
+
+      .pending-state {
+        display: grid;
+        gap: 0.55rem;
+      }
+
+      .pending-status {
+        font-size: 12.5px;
+        color: var(--text-secondary);
+      }
+
+      .code-display {
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-align: center;
+        padding: 0.7rem;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        background: var(--recessed);
+        color: var(--text);
+        user-select: all;
+      }
+
+      .url-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.3rem;
+        align-items: center;
+        font-size: 12px;
+      }
+
+      .url-value {
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 11px;
+        color: var(--text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding: 0.3rem 0.4rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--recessed);
+      }
+
+      .copy-btn {
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: var(--surface-3);
+        color: var(--text-secondary);
+        padding: 0.25rem 0.45rem;
+        font-size: 11px;
+        cursor: pointer;
+      }
+
+      .copy-btn:hover {
+        color: var(--text);
+      }
+
+      .countdown {
+        font-size: 11.5px;
+        color: var(--text-tertiary);
+        font-family: "SF Mono", ui-monospace, monospace;
+      }
+
+      .manual-section {
+        border-top: 1px solid var(--border);
+        padding-top: 0.5rem;
+      }
+
+      .manual-section label {
+        display: block;
+        font-size: 11.5px;
+        color: var(--text-secondary);
+        margin-bottom: 0.25rem;
+      }
+
+      .success-state {
+        text-align: center;
+        padding: 0.5rem 0;
+      }
+
+      .success-check {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: rgba(106, 158, 120, 0.12);
+        border: 1px solid rgba(106, 158, 120, 0.3);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        color: var(--ok);
+        margin-bottom: 0.5rem;
+      }
+
+      .success-state p {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      .success-state small {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 11.5px;
+        color: var(--text-secondary);
+      }
+
+      .error-state p {
+        margin: 0;
+        font-size: 12.5px;
+        color: var(--danger);
+      }
+
+      .dialog-actions {
+        display: flex;
+        gap: 0.25rem;
+        justify-content: flex-end;
+        padding-top: 0.4rem;
+        border-top: 1px solid var(--border);
+        margin-top: 0.3rem;
+      }
+
+      .dialog-actions .dock-btn {
+        font-size: 12px;
+      }
+
+      /* ── Page switching ── */
+
+      .page { display: none; }
+      .page.active { display: grid; }
+
+      /* ── Accounts Page ── */
+
+      .accounts-page {
+        grid-template-columns: 280px minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        gap: 1px;
+        background: var(--gap-fill);
+        min-height: 0;
+      }
+
+      .accounts-sidebar {
+        background: var(--surface-2);
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .accounts-sidebar .section-header {
+        border-bottom: 1px solid var(--border);
+      }
+
+      .accounts-filter-bar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.3rem;
+        padding: 0.45rem 0.55rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .accounts-filter-bar select {
+        font: inherit;
+        font-size: 11.5px;
+        background: var(--surface-3);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        padding: 0.25rem 0.35rem;
+      }
+
+      .accounts-detail {
+        background: var(--surface-2);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .accounts-detail .section-header {
+        border-bottom: 1px solid var(--border);
+      }
+
+      .detail-content {
+        overflow-y: auto;
+        padding: 0.55rem;
+        display: grid;
+        gap: 0.55rem;
+        align-content: start;
+      }
+
+      .detail-card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface-3);
+        padding: 0.55rem 0.6rem;
+      }
+
+      .detail-card h4 {
+        margin: 0 0 0.4rem;
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+      }
+
+      .usage-bar-row {
+        display: grid;
+        gap: 0.3rem;
+        margin-bottom: 0.35rem;
+      }
+
+      .usage-label-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+      }
+
+      .usage-label-row span:last-child {
+        color: var(--text-secondary);
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 11px;
+      }
+
+      .usage-bar {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--recessed);
+        overflow: hidden;
+      }
+
+      .usage-fill {
+        height: 100%;
+        border-radius: 2px;
+        background: var(--ok);
+        transition: width 200ms ease;
+      }
+
+      .usage-fill.warn { background: var(--warn); }
+      .usage-fill.danger { background: var(--danger); }
+
+      .usage-reset {
+        font-size: 11px;
+        color: var(--text-tertiary);
+      }
+
+      .token-grid {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.15rem 0.6rem;
+        font-size: 12px;
+      }
+
+      .token-grid dt {
+        color: var(--text-secondary);
+      }
+
+      .token-grid dd {
+        margin: 0;
+      }
+
+      .token-ok { color: var(--ok); }
+      .token-warn { color: var(--warn); }
+      .token-expired { color: var(--danger); }
+
+      .request-stats {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.3rem;
+      }
+
+      .request-stat {
+        font-size: 12px;
+      }
+
+      .request-stat span {
+        display: block;
+        font-size: 10.5px;
+        color: var(--text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .account-actions {
+        display: flex;
+        gap: 0.3rem;
+        padding-top: 0.45rem;
+        border-top: 1px solid var(--border);
+      }
+
+      .btn-danger {
+        border: 1px solid rgba(162, 90, 79, 0.3);
+        border-radius: var(--radius-sm);
+        background: rgba(162, 90, 79, 0.08);
+        color: var(--danger);
+        padding: 0.3rem 0.55rem;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .btn-danger:hover {
+        background: rgba(162, 90, 79, 0.15);
+      }
+
+      .empty-detail {
+        display: grid;
+        place-items: center;
+        text-align: center;
+        color: var(--text-tertiary);
+        padding: 2rem;
+        font-size: 12.5px;
+        gap: 0.25rem;
+      }
+
+      .empty-detail strong {
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+
+      /* ── Sessions Page ── */
+
+      .sessions-page {
+        grid-template-rows: minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .sessions-content {
+        background: var(--surface-2);
+        display: grid;
+        grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+        min-height: 0;
+      }
+
+      .sessions-content .section-header {
+        border-bottom: 1px solid var(--border);
+      }
+
+      .sessions-stats {
+        display: flex;
+        gap: 0.7rem;
+        align-items: center;
+        padding: 0.45rem 0.55rem;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+      }
+
+      .sessions-stats .stat-label {
+        color: var(--text-secondary);
+      }
+
+      .sessions-stats strong {
+        margin-left: 0.2rem;
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 11.5px;
+      }
+
+      .sessions-filter {
+        display: flex;
+        gap: 0.3rem;
+        padding: 0.4rem 0.55rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .filter-btn {
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--text-secondary);
+        padding: 0.2rem 0.45rem;
+        font-size: 11.5px;
+        cursor: pointer;
+        transition: background 100ms ease, border-color 100ms ease;
+      }
+
+      .filter-btn:hover {
+        background: var(--hover-fill);
+      }
+
+      .filter-btn.active {
+        background: var(--accent-dim);
+        border-color: var(--accent-border);
+        color: var(--text);
+      }
+
+      .kind-badge {
+        display: inline-block;
+        font-size: 10.5px;
+        padding: 0.1rem 0.35rem;
+        border-radius: var(--radius-sm);
+        font-weight: 500;
+      }
+
+      .kind-badge.codex-session {
+        background: rgba(122, 171, 156, 0.1);
+        color: var(--accent);
+      }
+
+      .kind-badge.sticky-thread {
+        background: rgba(176, 143, 78, 0.1);
+        color: var(--warn);
+      }
+
+      .kind-badge.prompt-cache {
+        background: rgba(130, 130, 160, 0.1);
+        color: #8888a8;
+      }
+
+      .stale-badge {
+        display: inline-block;
+        font-size: 10px;
+        padding: 0.05rem 0.3rem;
+        border-radius: var(--radius-sm);
+        background: rgba(162, 90, 79, 0.1);
+        color: var(--danger);
+        font-weight: 500;
+        margin-left: 0.3rem;
+      }
+
+      .durable-label {
+        color: var(--text-tertiary);
+        font-size: 11.5px;
+      }
+
+      .sessions-pagination {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.55rem;
+        border-top: 1px solid var(--border);
+        font-size: 11.5px;
+        color: var(--text-secondary);
+      }
+
+      .sessions-pagination button {
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: var(--surface-3);
+        color: var(--text-secondary);
+        padding: 0.2rem 0.4rem;
+        font-size: 11px;
+        cursor: pointer;
+      }
+
+      .sessions-pagination button:hover {
+        color: var(--text);
+      }
+
+      .sessions-pagination button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+
+      /* ── Request Detail Drawer ── */
+
+      .log-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(480px, 90vw);
+        background: var(--surface-3);
+        border-left: 1px solid var(--border-strong);
+        z-index: 200;
+        display: none;
+        grid-template-rows: auto minmax(0, 1fr);
+        box-shadow: -8px 0 24px rgba(0, 0, 0, 0.3);
+      }
+
+      .log-drawer.open {
+        display: grid;
+      }
+
+      .log-drawer .section-header {
+        border-bottom: 1px solid var(--border);
+        padding: 0.55rem 0.65rem;
+      }
+
+      .drawer-body {
+        overflow-y: auto;
+        padding: 0.55rem 0.65rem;
+        display: grid;
+        gap: 0.5rem;
+        align-content: start;
+      }
+
+      .drawer-section {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface-2);
+      }
+
+      .drawer-section-header {
+        padding: 0.35rem 0.5rem;
+        border-bottom: 1px solid var(--border);
+        font-size: 10.5px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-tertiary);
+      }
+
+      .drawer-kv {
+        display: grid;
+        grid-template-columns: 120px minmax(0, 1fr);
+        gap: 0.1rem 0.5rem;
+        padding: 0.4rem 0.5rem;
+        font-size: 12px;
+      }
+
+      .drawer-kv dt {
+        color: var(--text-secondary);
+      }
+
+      .drawer-kv dd {
+        margin: 0;
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 11px;
+        word-break: break-all;
+      }
+
+      .scoring-table {
+        width: 100%;
+        font-size: 11.5px;
+        border-collapse: collapse;
+      }
+
+      .scoring-table th {
+        text-align: left;
+        padding: 0.25rem 0.4rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border);
+        font-size: 10.5px;
+      }
+
+      .scoring-table td {
+        padding: 0.25rem 0.4rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .scoring-table tr.picked td {
+        color: var(--accent);
+        font-weight: 500;
+      }
+
+      .retry-chain {
+        display: grid;
+        gap: 0.2rem;
+        padding: 0.4rem 0.5rem;
+        font-size: 12px;
+      }
+
+      .retry-step {
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+      }
+
+      .retry-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .retry-dot.ok { background: var(--ok); }
+      .retry-dot.fail { background: var(--danger); }
+
+      /* ── Usage Trend Sparkline ── */
+
+      .trend-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.4rem;
+        align-items: center;
+        padding-top: 0.3rem;
+      }
+
+      .trend-label {
+        font-size: 10.5px;
+        color: var(--text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .sparkline {
+        height: 24px;
+        display: flex;
+        align-items: flex-end;
+        gap: 1px;
+      }
+
+      .spark-bar {
+        flex: 1;
+        border-radius: 1px 1px 0 0;
+        min-width: 2px;
+        background: var(--accent);
+        opacity: 0.6;
+        transition: opacity 100ms ease;
+      }
+
+      .spark-bar:last-child {
+        opacity: 1;
+      }
+
+      /* ── API Key Limits ── */
+
+      .key-limits {
+        border-top: 1px solid var(--border);
+      }
+
+      .key-limits-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        padding: 0.35rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .key-limits-header span {
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+      }
+
+      .limit-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto auto;
+        gap: 0.4rem;
+        align-items: center;
+        padding: 0.3rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+      }
+
+      .limit-row:last-child {
+        border-bottom: none;
+      }
+
+      .limit-type {
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 11px;
+      }
+
+      .limit-window {
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      .limit-value {
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 11px;
+        text-align: right;
+      }
+
+      .drawer-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 199;
+        display: none;
+      }
+
+      .drawer-backdrop.open {
+        display: block;
+      }
+
+      /* ── Logs Page ── */
+
+      .logs-page {
+        grid-template-rows: minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .logs-content {
+        background: var(--surface-2);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .logs-content .section-header {
+        border-bottom: 1px solid var(--border);
+      }
+
+      /* ── Settings Page ── */
+
+      .settings-page {
+        grid-template-rows: minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .settings-scroll {
+        background: var(--surface-2);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .settings-scroll .section-header {
+        border-bottom: 1px solid var(--border);
+      }
+
+      .settings-body {
+        overflow-y: auto;
+        padding: 0.6rem;
+        display: grid;
+        gap: 0.6rem;
+        align-content: start;
+      }
+
+      .settings-group {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface-3);
+      }
+
+      .settings-group-header {
+        padding: 0.5rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .settings-group-header h3 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 550;
+      }
+
+      .settings-group-header p {
+        margin: 0.15rem 0 0;
+        font-size: 11.5px;
+        color: var(--text-secondary);
+      }
+
+      .setting-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.5rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .setting-row:last-child {
+        border-bottom: none;
+      }
+
+      .setting-label {
+        display: grid;
+        gap: 0.05rem;
+      }
+
+      .setting-label strong {
+        font-size: 12.5px;
+        font-weight: 500;
+      }
+
+      .setting-label span {
+        font-size: 11px;
+        color: var(--text-secondary);
+        line-height: 1.35;
+      }
+
+      .setting-toggle {
+        position: relative;
+        width: 34px;
+        height: 18px;
+        border: none;
+        border-radius: 9px;
+        background: var(--surface-1);
+        cursor: pointer;
+        transition: background 150ms ease;
+        flex-shrink: 0;
+      }
+
+      .setting-toggle::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--text-tertiary);
+        transition: transform 150ms ease, background 150ms ease;
+      }
+
+      .setting-toggle.on {
+        background: var(--accent);
+      }
+
+      .setting-toggle.on::after {
+        transform: translateX(16px);
+        background: #fff;
+      }
+
+      .setting-select {
+        font: inherit;
+        font-size: 12px;
+        background: var(--surface-1);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        padding: 0.3rem 0.4rem;
+        min-width: 160px;
+      }
+
+      .setting-input {
+        font: inherit;
+        font-size: 12px;
+        background: var(--surface-1);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        padding: 0.3rem 0.4rem;
+        width: 90px;
+        text-align: right;
+        font-family: "SF Mono", ui-monospace, monospace;
+      }
+
+      .setting-input:focus {
+        outline: none;
+        border-color: var(--accent-border);
+      }
+
+      /* API keys list */
+      .api-key-list {
+        display: grid;
+        gap: 1px;
+      }
+
+      .api-key-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        gap: 0.4rem;
+        align-items: center;
+        padding: 0.45rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .api-key-item:last-child {
+        border-bottom: none;
+      }
+
+      .api-key-name {
+        font-size: 12.5px;
+        font-weight: 500;
+      }
+
+      .api-key-value {
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 11px;
+        color: var(--text-secondary);
+      }
+
+      .api-key-meta {
+        font-size: 11px;
+        color: var(--text-tertiary);
+      }
+
+      /* IP allowlist */
+      .ip-list {
+        display: grid;
+        gap: 1px;
+      }
+
+      .ip-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.4rem;
+        align-items: center;
+        padding: 0.4rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 12px;
+      }
+
+      .ip-item:last-child {
+        border-bottom: none;
+      }
+
+      .add-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.3rem;
+        padding: 0.4rem 0.6rem;
+      }
+
+      /* Auth status */
+      .auth-status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.45rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+        font-size: 12.5px;
+      }
+
+      .auth-status .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--ok);
+        flex-shrink: 0;
+      }
+
+      .auth-status .status-dot.off {
+        background: var(--text-tertiary);
+      }
+
+      .auth-actions {
+        display: flex;
+        gap: 0.3rem;
+        padding: 0.4rem 0.6rem;
+      }
+
+      /* ── Strategy cards ── */
+
+      .strategy-option {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.5rem;
+        padding: 0.5rem 0.6rem;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+        transition: background 100ms ease;
+      }
+
+      .strategy-option:last-child {
+        border-bottom: none;
+      }
+
+      .strategy-option:hover {
+        background: var(--hover-fill);
+      }
+
+      .strategy-option.active {
+        background: var(--accent-dim);
+      }
+
+      .strategy-radio {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 1.5px solid var(--border-strong);
+        margin-top: 1px;
+        flex-shrink: 0;
+        transition: border-color 100ms ease;
+      }
+
+      .strategy-option.active .strategy-radio {
+        border-color: var(--accent);
+        background: var(--accent);
+        box-shadow: inset 0 0 0 2.5px var(--surface-3);
+      }
+
+      .strategy-info {
+        display: grid;
+        gap: 0.15rem;
+      }
+
+      .strategy-info strong {
+        font-size: 12.5px;
+        font-weight: 520;
+      }
+
+      .strategy-info .strategy-desc {
+        font-size: 11px;
+        color: var(--text-secondary);
+        line-height: 1.4;
+      }
+
+      .strategy-formula {
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 10.5px;
+        color: var(--text-tertiary);
+        margin-top: 0.1rem;
+      }
+
+      .strategy-param-row {
+        display: flex;
+        gap: 0.4rem;
+        align-items: center;
+        margin-top: 0.2rem;
+        font-size: 11.5px;
+      }
+
+      .strategy-param-row label {
+        color: var(--text-secondary);
+      }
+
+      .strategy-param-row input {
+        font: inherit;
+        font-size: 11.5px;
+        font-family: "SF Mono", ui-monospace, monospace;
+        width: 52px;
+        text-align: right;
+        background: var(--surface-1);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        padding: 0.15rem 0.3rem;
+      }
+
+      .composite-weights {
+        padding: 0.5rem 0.6rem;
+        border-top: 1px solid var(--border);
+      }
+
+      .composite-weights h4 {
+        margin: 0 0 0.35rem;
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+      }
+
+      .weight-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.25rem 0.5rem;
+      }
+
+      .weight-item {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 0.3rem;
+        align-items: center;
+        font-size: 11.5px;
+      }
+
+      .weight-item label {
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 11px;
+        color: var(--text-secondary);
+        min-width: 2.5em;
+      }
+
+      .weight-item input[type="range"] {
+        width: 100%;
+        height: 4px;
+        -webkit-appearance: none;
+        appearance: none;
+        border-radius: 2px;
+        outline: none;
+        background: linear-gradient(to right, var(--accent) 0%, var(--accent) 30%, var(--surface-1) 30%, var(--surface-1) 100%);
+      }
+
+      .weight-item input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        border: 2px solid var(--surface-3);
+      }
+
+      .weight-item strong {
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 10.5px;
+        min-width: 2.2em;
+        text-align: right;
+      }
+
+      .composite-formula {
+        margin-top: 0.35rem;
+        padding: 0.35rem 0.45rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--recessed);
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 10.5px;
+        color: var(--text-secondary);
+        line-height: 1.5;
+        overflow-x: auto;
+      }
+
+      .headroom-weights {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        margin-top: 0.3rem;
+        font-size: 11.5px;
+      }
+
+      .headroom-weights label {
+        color: var(--text-secondary);
+        font-family: "SF Mono", ui-monospace, monospace;
+        font-size: 11px;
+      }
+
+      .headroom-weights input {
+        font: inherit;
+        font-size: 11px;
+        font-family: "SF Mono", ui-monospace, monospace;
+        width: 48px;
+        text-align: right;
+        background: var(--surface-1);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        padding: 0.15rem 0.3rem;
+      }
+
+      /* ── Responsive ── */
+
+      @media (max-width: 1380px) {
+        .route-stage {
+          grid-template-columns: 250px minmax(0, 1fr);
+        }
+        .route-stage.inspector-open {
+          grid-template-columns: 250px minmax(0, 1fr) 260px;
+        }
+      }
+
+      @media (max-width: 1220px) {
+        body {
+          display: block;
+        }
+
+        .window {
+          width: 100vw;
+          height: auto;
+          min-height: 100vh;
+          border-radius: 0;
+          border-left: none;
+          border-right: none;
+        }
+
+        .route-stage {
+          grid-template-columns: 240px minmax(0, 1fr);
+        }
+        .route-stage.inspector-open {
+          grid-template-columns: 240px minmax(0, 1fr);
+          grid-template-areas:
+            "objects ledger"
+            "details details";
+        }
+
+        .workbench {
+          grid-template-rows: auto auto;
+        }
+      }
+
+      @media (max-width: 980px) {
+        .app-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .nav-rail {
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-rows: auto auto auto;
+          align-items: start;
+        }
+
+        .brand {
+          grid-column: 1 / -1;
+        }
+
+        .rail-foot {
+          grid-column: 1 / -1;
+        }
+
+        .tool-strip {
+          grid-template-columns: 1fr;
+        }
+
+        .tool-actions {
+          justify-content: stretch;
+        }
+
+        .search {
+          width: 100%;
+        }
+
+        .route-stage {
+          grid-template-columns: 1fr;
+          grid-template-areas:
+            "objects"
+            "ledger"
+            "details";
+        }
+      }
+
+      @media (max-width: 720px) {
+        .nav-rail {
+          grid-template-columns: 1fr;
+        }
+
+        .ops-strip,
+        .summary-grid,
+        .mode-grid {
+          grid-template-columns: 1fr;
+        }
+
+        table {
+          min-width: 720px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="window" aria-label="tightrope routing workbench">
+      <header class="titlebar" aria-label="Window title">
+        <div class="titlecopy">
+          <strong>tightrope</strong>
+          <span>routing workbench</span>
+        </div>
+      </header>
+
+      <div class="app-shell">
+        <aside class="nav-rail">
+          <section class="brand">
+            <div class="brand-line">
+              <div class="brand-mark" aria-hidden="true"></div>
+              <div>
+                <strong>tightrope</strong>
+                <span>API load balancer</span>
+              </div>
+            </div>
+          </section>
+
+          <nav class="rail-group" aria-label="Runtime objects">
+            <p class="rail-label">Objects</p>
+            <button class="nav-item active" data-page="router" type="button">
+              <strong>Router</strong>
+              <span>Process, bind, health</span>
+            </button>
+            <button class="nav-item" data-page="accounts" type="button">
+              <strong>Accounts</strong>
+              <span>Quota, tokens, usage</span>
+            </button>
+            <button class="nav-item" data-page="sessions" type="button">
+              <strong>Sessions</strong>
+              <span>Affinity and sticky reuse</span>
+            </button>
+            <button class="nav-item" data-page="logs" type="button">
+              <strong>Logs</strong>
+              <span>Requests and events</span>
+            </button>
+            <button class="nav-item" data-page="settings" type="button">
+              <strong>Settings</strong>
+              <span>Routing, auth, keys</span>
+            </button>
+          </nav>
+
+          <!-- Shortcuts section removed: Live routes / Failures / Settings are views, not objects -->
+
+          <section class="rail-foot">
+            <div class="foot-row">
+              <span>Transport</span>
+              <strong>SSE + WebSocket</strong>
+            </div>
+            <div class="foot-row">
+              <span>Runtime</span>
+              <strong>Electron-managed backend</strong>
+            </div>
+            <div class="foot-row">
+              <span>Storage</span>
+              <strong>SQLite / PostgreSQL</strong>
+            </div>
+          </section>
+        </aside>
+
+        <section class="workspace">
+          <header class="tool-strip">
+            <div class="tool-context">
+              <div class="router-state" id="routerStateBadge" data-state="running">
+                <span class="state-dot" aria-hidden="true"></span>
+                <div class="router-state-copy">
+                  <strong>Router running</strong>
+                  <span>Child process managed by Electron</span>
+                </div>
+              </div>
+              <div class="tool-chip">
+                <span>Bind</span>
+                <strong class="mono" id="bindLabel">127.0.0.1:2455</strong>
+              </div>
+              <div class="tool-chip">
+                <span>Strategy</span>
+                <strong id="strategyLabel">P2C Composite</strong>
+              </div>
+              <div class="tool-chip">
+                <span>Eligible</span>
+                <strong id="activeAccounts">0/0</strong>
+              </div>
+            </div>
+            <div class="tool-actions">
+              <input
+                class="search"
+                id="routeSearch"
+                type="search"
+                placeholder="Search by ID, model, or account"
+                aria-label="Search routed requests"
+              />
+              <button class="tool-btn" id="startRouter" type="button">Start</button>
+              <button class="tool-btn" id="restartRouter" type="button">Restart</button>
+              <button class="tool-btn accent" id="pauseRouter" type="button">Pause Routes</button>
+              <span class="tool-sep" aria-hidden="true"></span>
+              <button class="tool-btn" id="openBackendDialog" type="button">Backend</button>
+              <button class="tool-btn" id="openAuthDialog" type="button">OAuth</button>
+            </div>
+          </header>
+
+          <!-- Router page (default) -->
+          <section class="workbench page active" id="pageRouter" data-page="router">
+            <div class="route-stage">
+              <section class="pane object-pane">
+                <header class="section-header">
+                  <div>
+                    <p class="eyebrow">Accounts</p>
+                    <h1>Routing pool</h1>
+                  </div>
+                  <button class="tool-btn" id="openAddAccount" type="button">+ Add</button>
+                </header>
+                <div class="pane-body">
+                  <span id="selectedHint" style="display:none"></span>
+                  <div class="accounts-list" id="accountsList"></div>
+                </div>
+              </section>
+
+              <section class="pane ledger-pane">
+                <header class="section-header ledger-header">
+                  <div>
+                    <p class="eyebrow">Live</p>
+                    <h2>Requests</h2>
+                  </div>
+                  <div class="protocol-filters" aria-label="Protocol filters">
+                    <span class="filter-chip active">SSE</span>
+                    <span class="filter-chip active">WS</span>
+                    <span class="filter-chip">Compact</span>
+                    <span class="filter-chip">Transcribe</span>
+                  </div>
+                </header>
+                <div class="pane-body ledger-body">
+                  <section class="ops-strip" aria-label="Key metrics">
+                    <article class="metric">
+                      <span>Req / min</span>
+                      <strong id="kpiRpm">0</strong>
+                    </article>
+                    <article class="metric">
+                      <span>p95 latency</span>
+                      <strong id="kpiP95">0 ms</strong>
+                    </article>
+                    <article class="metric">
+                      <span>Failovers</span>
+                      <strong id="kpiFailover">0</strong>
+                    </article>
+                    <article class="metric">
+                      <span>Sticky hit</span>
+                      <strong id="kpiSticky">0%</strong>
+                    </article>
+                  </section>
+
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Request</th>
+                          <th>Protocol</th>
+                          <th>Model</th>
+                          <th>Account</th>
+                          <th>Tokens</th>
+                          <th>Latency</th>
+                          <th>Score</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody id="routeRows"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="pane detail-pane" id="detailPane">
+                <header class="section-header">
+                  <div>
+                    <p class="eyebrow">Inspector</p>
+                    <h2>Route details</h2>
+                  </div>
+                  <button class="dialog-close" id="closeInspector" type="button" aria-label="Close inspector">&times;</button>
+                </header>
+                <div class="pane-body">
+                  <div class="detail-stack" id="inspector"></div>
+                </div>
+              </aside>
+            </div>
+
+            <section class="events-panel">
+              <header class="events-header">
+                <div>
+                  <p class="eyebrow">Log</p>
+                  <h3>Runtime events</h3>
+                </div>
+              </header>
+              <div class="events-body" id="eventsDock"></div>
+            </section>
+          </section>
+
+          <!-- Accounts page -->
+          <section class="accounts-page page" id="pageAccounts" data-page="accounts">
+            <div class="accounts-sidebar">
+              <header class="section-header">
+                <div>
+                  <p class="eyebrow">Imported</p>
+                  <h2>Accounts</h2>
+                </div>
+                <button class="tool-btn" id="openAddAccount2" type="button">+ Add</button>
+              </header>
+              <div class="accounts-filter-bar">
+                <input class="search" id="accountSearch" type="search" placeholder="Search accounts..." aria-label="Search accounts" />
+                <select id="accountStatusFilter" aria-label="Filter by status">
+                  <option value="">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="rate_limited">Rate limited</option>
+                  <option value="deactivated">Deactivated</option>
+                </select>
+              </div>
+              <div class="pane-body">
+                <div class="accounts-list" id="accountsListFull"></div>
+              </div>
+            </div>
+            <div class="accounts-detail" id="accountDetailPanel">
+              <header class="section-header">
+                <div>
+                  <p class="eyebrow">Detail</p>
+                  <h2 id="accountDetailName">Select an account</h2>
+                </div>
+                <span id="accountDetailId" style="font-size:11px; color:var(--text-tertiary); font-family:'SF Mono',ui-monospace,monospace"></span>
+              </header>
+              <div class="detail-content" id="accountDetailBody">
+                <div class="empty-detail" id="accountEmptyState">
+                  <strong>Select an account</strong>
+                  <span>Choose an account from the list to view details</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Sessions page -->
+          <section class="sessions-page page" id="pageSessions" data-page="sessions">
+            <div class="sessions-content">
+              <header class="section-header">
+                <div>
+                  <p class="eyebrow">Sticky</p>
+                  <h2>Sessions</h2>
+                </div>
+                <button class="dock-btn accent" id="purgeStaleSessions" type="button">Purge stale</button>
+              </header>
+              <div class="sessions-stats">
+                <span><span class="stat-label">Visible rows</span><strong id="sessionsCount">0</strong></span>
+                <span><span class="stat-label">Stale prompt-cache</span><strong id="staleCount">0</strong></span>
+              </div>
+              <div class="sessions-filter">
+                <button class="filter-btn active" data-kind="all" type="button">All</button>
+                <button class="filter-btn" data-kind="codex_session" type="button">Codex session</button>
+                <button class="filter-btn" data-kind="sticky_thread" type="button">Sticky thread</button>
+                <button class="filter-btn" data-kind="prompt_cache" type="button">Prompt cache</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Key</th>
+                      <th>Kind</th>
+                      <th>Account</th>
+                      <th>Updated</th>
+                      <th>Expiry</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="sessionsRows"></tbody>
+                </table>
+              </div>
+              <div class="sessions-pagination">
+                <span id="sessionsPaginationLabel">1–10 of 12</span>
+                <button id="sessionsPrev" type="button" disabled>&lsaquo; Prev</button>
+                <button id="sessionsNext" type="button">Next &rsaquo;</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Logs page -->
+          <section class="logs-page page" id="pageLogs" data-page="logs">
+            <div class="logs-content">
+              <header class="section-header">
+                <div>
+                  <p class="eyebrow">Request</p>
+                  <h2>Logs</h2>
+                </div>
+              </header>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Request</th>
+                      <th>Protocol</th>
+                      <th>Model</th>
+                      <th>Account</th>
+                      <th>Tokens</th>
+                      <th>Latency</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="logsRows"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- Settings page -->
+          <section class="settings-page page" id="pageSettings" data-page="settings">
+            <div class="settings-scroll">
+              <header class="section-header">
+                <div>
+                  <p class="eyebrow">Configuration</p>
+                  <h2>Settings</h2>
+                </div>
+              </header>
+              <div class="settings-body" id="settingsBody">
+
+                <!-- Routing strategy -->
+                <div class="settings-group">
+                  <div class="settings-group-header">
+                    <h3>Routing strategy</h3>
+                    <p>Load balancing algorithm and composite scoring weights</p>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Strategy</strong>
+                      <span>How requests are distributed across eligible accounts</span>
+                    </div>
+                    <select class="setting-select" id="settingStrategy"></select>
+                  </div>
+                  <div id="strategyDetail"></div>
+                  <div id="compositeParams"></div>
+                </div>
+
+                <!-- Routing options -->
+                <div class="settings-group">
+                  <div class="settings-group-header">
+                    <h3>Routing options</h3>
+                    <p>Transport and request affinity</p>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Upstream stream transport</strong>
+                      <span>Connection method for streaming responses</span>
+                    </div>
+                    <select class="setting-select" id="settingStreamTransport">
+                      <option value="default" selected>Server default</option>
+                      <option value="auto">Auto-detect</option>
+                      <option value="http">HTTP Responses API</option>
+                      <option value="websocket">WebSocket</option>
+                    </select>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Sticky threads</strong>
+                      <span>Pin related requests to the same upstream account</span>
+                    </div>
+                    <button class="setting-toggle" id="settingStickyThreads" type="button" aria-label="Toggle sticky threads"></button>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Prefer earlier reset</strong>
+                      <span>Bias traffic toward accounts whose quota resets sooner</span>
+                    </div>
+                    <button class="setting-toggle" id="settingPreferEarlierReset" type="button" aria-label="Toggle prefer earlier reset"></button>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Prompt cache affinity TTL</strong>
+                      <span>How long prompt-cache sticky mappings stay alive</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.3rem">
+                      <input class="setting-input" id="settingCacheAffinityTtl" type="number" value="1800" min="1" />
+                      <span style="font-size:11px; color:var(--text-secondary)">sec</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Import -->
+                <div class="settings-group">
+                  <div class="settings-group-header">
+                    <h3>Import</h3>
+                    <p>Account import behavior</p>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Import without overwrite</strong>
+                      <span>Keep existing accounts when importing duplicates</span>
+                    </div>
+                    <button class="setting-toggle" id="settingImportNoOverwrite" type="button" aria-label="Toggle import without overwrite"></button>
+                  </div>
+                </div>
+
+                <!-- Dashboard auth -->
+                <div class="settings-group">
+                  <div class="settings-group-header">
+                    <h3>Dashboard authentication</h3>
+                    <p>Password and two-factor authentication for the dashboard</p>
+                  </div>
+                  <div class="auth-status">
+                    <span class="status-dot on" id="passwordDot"></span>
+                    <span>Password</span>
+                    <strong id="passwordStatus">Set</strong>
+                  </div>
+                  <div class="auth-actions" id="passwordActions">
+                    <button class="dock-btn" type="button">Change</button>
+                    <button class="btn-danger" type="button" style="font-size:11.5px; padding:0.25rem 0.45rem">Remove</button>
+                  </div>
+                  <div class="auth-status">
+                    <span class="status-dot" id="totpDot"></span>
+                    <span>Two-factor (TOTP)</span>
+                    <strong id="totpStatus">Not configured</strong>
+                  </div>
+                  <div class="auth-actions" id="totpActions">
+                    <button class="dock-btn accent" type="button">Set up TOTP</button>
+                  </div>
+                </div>
+
+                <!-- API key auth -->
+                <div class="settings-group">
+                  <div class="settings-group-header">
+                    <h3>API key authentication</h3>
+                    <p>Require API keys on proxy requests for access control and per-key usage limits</p>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Require API key</strong>
+                      <span>Reject proxy requests without a valid <code style="font-size:11px; background:var(--surface-1); padding:0.05rem 0.25rem; border-radius:2px">sk-clb-…</code> key</span>
+                    </div>
+                    <button class="setting-toggle on" id="settingApiKeyAuth" type="button" aria-label="Toggle API key auth"></button>
+                  </div>
+                  <div class="api-key-list" id="apiKeyList">
+                    <div class="api-key-item">
+                      <div>
+                        <div class="api-key-name">Production</div>
+                        <div class="api-key-value">sk-clb-prod-••••••••a4f2</div>
+                      </div>
+                      <span class="api-key-meta">No expiry</span>
+                      <button class="btn-danger" type="button" style="font-size:11px; padding:0.15rem 0.4rem">Revoke</button>
+                    </div>
+                    <div class="key-limits">
+                      <div class="key-limits-header">
+                        <span>Usage limits</span>
+                        <button class="dock-btn" type="button" style="font-size:10.5px; padding:0.15rem 0.35rem">+ Add limit</button>
+                      </div>
+                      <div class="limit-row">
+                        <span class="limit-type">total_tokens</span>
+                        <span class="limit-window">daily</span>
+                        <span class="limit-value">500,000</span>
+                        <button class="btn-danger" type="button" style="font-size:10px; padding:0.1rem 0.3rem">Remove</button>
+                      </div>
+                      <div class="limit-row">
+                        <span class="limit-type">cost_usd</span>
+                        <span class="limit-window">monthly</span>
+                        <span class="limit-value">$25.00</span>
+                        <button class="btn-danger" type="button" style="font-size:10px; padding:0.1rem 0.3rem">Remove</button>
+                      </div>
+                    </div>
+
+                    <div class="api-key-item">
+                      <div>
+                        <div class="api-key-name">Development</div>
+                        <div class="api-key-value">sk-clb-dev-••••••••c817</div>
+                      </div>
+                      <span class="api-key-meta">Expires Apr 30</span>
+                      <button class="btn-danger" type="button" style="font-size:11px; padding:0.15rem 0.4rem">Revoke</button>
+                    </div>
+                    <div class="key-limits">
+                      <div class="key-limits-header">
+                        <span>Usage limits</span>
+                        <button class="dock-btn" type="button" style="font-size:10.5px; padding:0.15rem 0.35rem">+ Add limit</button>
+                      </div>
+                      <div class="limit-row">
+                        <span class="limit-type">output_tokens</span>
+                        <span class="limit-window">daily</span>
+                        <span class="limit-value">100,000</span>
+                        <button class="btn-danger" type="button" style="font-size:10px; padding:0.1rem 0.3rem">Remove</button>
+                      </div>
+                    </div>
+
+                    <div class="api-key-item">
+                      <div>
+                        <div class="api-key-name">CI / staging</div>
+                        <div class="api-key-value">sk-clb-ci-••••••••91e0</div>
+                      </div>
+                      <span class="api-key-meta">gpt-4o only</span>
+                      <button class="btn-danger" type="button" style="font-size:11px; padding:0.15rem 0.4rem">Revoke</button>
+                    </div>
+                    <div class="key-limits">
+                      <div class="key-limits-header">
+                        <span>Usage limits</span>
+                        <button class="dock-btn" type="button" style="font-size:10.5px; padding:0.15rem 0.35rem">+ Add limit</button>
+                      </div>
+                      <div class="limit-row">
+                        <span class="limit-type">total_tokens</span>
+                        <span class="limit-window">weekly</span>
+                        <span class="limit-value">200,000</span>
+                        <button class="btn-danger" type="button" style="font-size:10px; padding:0.1rem 0.3rem">Remove</button>
+                      </div>
+                      <div class="limit-row">
+                        <span class="limit-type">input_tokens</span>
+                        <span class="limit-window">daily · gpt-4o</span>
+                        <span class="limit-value">50,000</span>
+                        <button class="btn-danger" type="button" style="font-size:10px; padding:0.1rem 0.3rem">Remove</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="add-row">
+                    <input class="setting-input" type="text" placeholder="Key name" style="width:100%; text-align:left" />
+                    <button class="dock-btn accent" type="button">Create key</button>
+                  </div>
+                </div>
+
+                <!-- Firewall -->
+                <div class="settings-group">
+                  <div class="settings-group-header">
+                    <h3>IP allowlist</h3>
+                    <p>When entries exist, only listed IPs can reach the proxy. Empty list allows all traffic.</p>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Firewall mode</strong>
+                    </div>
+                    <span style="font-size:12px; color:var(--text-secondary)" id="firewallMode">Allowlist active (2 IPs)</span>
+                  </div>
+                  <div class="ip-list" id="ipAllowlist">
+                    <div class="ip-item">
+                      <span>127.0.0.1</span>
+                      <button class="btn-danger" type="button" style="font-size:11px; padding:0.15rem 0.4rem">Remove</button>
+                    </div>
+                    <div class="ip-item">
+                      <span>10.0.1.42</span>
+                      <button class="btn-danger" type="button" style="font-size:11px; padding:0.15rem 0.4rem">Remove</button>
+                    </div>
+                  </div>
+                  <div class="add-row">
+                    <input class="setting-input" type="text" placeholder="IP address" style="width:100%; text-align:left; font-family:'SF Mono',ui-monospace,monospace" />
+                    <button class="dock-btn" type="button">Add IP</button>
+                  </div>
+                </div>
+
+                <!-- Database Synchronization -->
+                <div class="settings-group">
+                  <div class="settings-group-header">
+                    <h3>Database synchronization</h3>
+                    <p>Bidirectional sync between instances using journaled change replication with conflict resolution.</p>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Enable sync</strong>
+                      <span>Activate bidirectional replication with a remote instance</span>
+                    </div>
+                    <button class="setting-toggle on" type="button" id="syncToggle"></button>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Instance ID</strong>
+                      <span>Unique site identifier for this node (auto-generated)</span>
+                    </div>
+                    <span style="font-size:12px; font-family:'SF Mono',ui-monospace,monospace; color:var(--text-secondary)">site_a3f8c1e2</span>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Peer discovery</strong>
+                      <span>Find instances on the local network via mDNS (Bonjour/Avahi)</span>
+                    </div>
+                    <button class="setting-toggle on" type="button"></button>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Cluster name</strong>
+                      <span>Only sync with peers advertising the same cluster</span>
+                    </div>
+                    <input class="setting-input" type="text" value="default" style="width:120px; text-align:right" />
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Discovered peers</strong>
+                      <span>Instances found on network</span>
+                    </div>
+                    <div style="display:flex; gap:0.5rem; align-items:center; font-size:11.5px">
+                      <span style="font-family:'SF Mono',ui-monospace,monospace; color:var(--text-secondary)">site_b7d2e4f1</span>
+                      <span style="color:var(--ok)">10.0.1.50:9400</span>
+                    </div>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Manual peer</strong>
+                      <span>Fallback address for cross-subnet peers</span>
+                    </div>
+                    <input class="setting-input" type="text" placeholder="host:port" style="width:160px; text-align:right; font-family:'SF Mono',ui-monospace,monospace" />
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Sync interval</strong>
+                      <span>Seconds between sync cycles (0 = real-time push)</span>
+                    </div>
+                    <input class="setting-input" type="number" value="5" min="0" max="3600" style="width:70px; text-align:right" />
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Conflict resolution</strong>
+                      <span>Strategy when both instances modify the same row</span>
+                    </div>
+                    <select class="setting-select" style="min-width:180px">
+                      <option value="lww" selected>Last-writer-wins (HLC)</option>
+                      <option value="site_priority">Site priority</option>
+                      <option value="field_merge">Per-field merge</option>
+                    </select>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Journal retention</strong>
+                      <span>Days to keep change journal entries before compaction</span>
+                    </div>
+                    <input class="setting-input" type="number" value="30" min="1" max="365" style="width:70px; text-align:right" />
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Transport encryption</strong>
+                      <span>TLS for sync traffic between instances</span>
+                    </div>
+                    <button class="setting-toggle on" type="button"></button>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Consistency model</strong>
+                    </div>
+                    <div style="font-size:11.5px; color:var(--text-secondary); line-height:1.5">
+                      <div style="display:flex; gap:0.4rem; align-items:baseline">
+                        <span style="color:var(--text); font-weight:500">Raft consensus</span>
+                        <span>accounts, settings, API keys</span>
+                      </div>
+                      <div style="display:flex; gap:0.4rem; align-items:baseline">
+                        <span style="color:var(--text); font-weight:500">CRDT merge</span>
+                        <span>usage, sessions, IP allowlist</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="setting-row" style="border-bottom:none">
+                    <div class="setting-label">
+                      <strong>Cluster status</strong>
+                    </div>
+                    <div style="display:grid; gap:0.3rem; font-size:11.5px; text-align:right">
+                      <div style="display:flex; gap:0.8rem; align-items:center; justify-content:flex-end">
+                        <span style="color:var(--accent); font-weight:500">Leader</span>
+                        <span style="color:var(--text-secondary)">Term 14</span>
+                        <span style="color:var(--text-secondary)">Commit #2,891</span>
+                      </div>
+                      <div style="display:flex; gap:0.8rem; align-items:center; justify-content:flex-end">
+                        <span style="color:var(--ok)">2 peers connected</span>
+                        <span style="color:var(--text-secondary)">Last sync: 2s ago</span>
+                        <span style="color:var(--text-secondary)">Journal: 1,247</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Appearance -->
+                <div class="settings-group">
+                  <div class="settings-group-header">
+                    <h3>Appearance</h3>
+                  </div>
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <strong>Theme</strong>
+                      <span>Dashboard color scheme</span>
+                    </div>
+                    <select class="setting-select" id="settingTheme" style="min-width:120px">
+                      <option value="auto" selected>System</option>
+                      <option value="dark">Dark</option>
+                      <option value="light">Light</option>
+                    </select>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </section>
+
+        </section>
+      </div>
+    </main>
+
+    <!-- Request detail drawer -->
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <aside class="log-drawer" id="logDrawer">
+      <header class="section-header">
+        <div>
+          <p class="eyebrow">Request</p>
+          <h2 id="drawerTitle">req_...</h2>
+        </div>
+        <button class="dialog-close" id="closeDrawer" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div class="drawer-body" id="drawerBody"></div>
+    </aside>
+
+    <!-- Backend dialog -->
+    <dialog id="backendDialog">
+      <header class="dialog-header">
+        <h3>Backend</h3>
+        <button class="dialog-close" id="closeBackendDialog" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div class="dialog-body" id="runtimeDock"></div>
+    </dialog>
+
+    <!-- Add Account dialog -->
+    <dialog id="addAccountDialog">
+      <header class="dialog-header">
+        <h3 id="addAccountTitle">Add account</h3>
+        <button class="dialog-close" id="closeAddAccount" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div class="dialog-body" id="addAccountBody">
+        <!-- Step: method selection -->
+        <div class="step active" id="stepMethod">
+          <div class="method-list">
+            <button class="method-option" id="methodBrowser" type="button">
+              <strong>Browser sign-in <span class="method-tag">recommended</span></strong>
+              <span>Opens a browser window for OpenAI authentication via PKCE</span>
+            </button>
+            <button class="method-option" id="methodDevice" type="button">
+              <strong>Device code</strong>
+              <span>Enter a code on another device. For headless or remote setups</span>
+            </button>
+            <button class="method-option" id="methodImport" type="button">
+              <strong>Import auth.json</strong>
+              <span>Upload an existing auth.json file with pre-exported credentials</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step: import -->
+        <div class="step" id="stepImport">
+          <div class="file-drop" id="fileDrop">
+            <p>Drop auth.json here or click to browse</p>
+            <small>JSON file with tokens, lastRefreshAt, and optional OPENAI_API_KEY</small>
+            <input type="file" id="fileInput" accept=".json,application/json" />
+            <div class="file-name" id="fileName"></div>
+          </div>
+          <div class="dialog-actions">
+            <button class="dock-btn" id="importBack" type="button">Back</button>
+            <button class="dock-btn accent" id="importSubmit" type="button" disabled>Import</button>
+          </div>
+        </div>
+
+        <!-- Step: browser pending -->
+        <div class="step" id="stepBrowser">
+          <div class="pending-state">
+            <p class="pending-status">Waiting for authorization&hellip;</p>
+            <div class="url-row">
+              <span class="url-value" id="browserAuthUrl">https://auth.openai.com/oauth/authorize?...</span>
+              <button class="copy-btn" id="copyAuthUrl" type="button">Copy</button>
+            </div>
+            <div class="button-row">
+              <button class="dock-btn accent" id="openSignIn" type="button">Open sign-in page</button>
+            </div>
+            <div class="manual-section">
+              <label>Remote server? Paste the callback URL after sign-in:</label>
+              <div class="url-row">
+                <input class="auth-input" id="manualCallback" type="text" placeholder="http://127.0.0.1:1455/auth/callback?code=..." />
+                <button class="dock-btn" id="submitManualCallback" type="button">Submit</button>
+              </div>
+            </div>
+          </div>
+          <div class="dialog-actions">
+            <button class="dock-btn" id="browserCancel" type="button">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Step: device code pending -->
+        <div class="step" id="stepDevice">
+          <div class="pending-state">
+            <p class="pending-status">Enter this code at the verification page:</p>
+            <div class="code-display" id="deviceUserCode">AAAA-BBBB</div>
+            <div class="url-row">
+              <span class="url-value" id="deviceVerifyUrl">https://auth.openai.com/codex/device</span>
+              <button class="copy-btn" id="copyDeviceUrl" type="button">Copy</button>
+            </div>
+            <div class="button-row">
+              <button class="dock-btn accent" id="openDeviceLink" type="button">Open verification page</button>
+            </div>
+            <p class="countdown" id="deviceCountdown">Expires in 14:59</p>
+          </div>
+          <div class="dialog-actions">
+            <button class="dock-btn" id="deviceCancel" type="button">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Step: success -->
+        <div class="step" id="stepSuccess">
+          <div class="success-state">
+            <div class="success-check">&check;</div>
+            <p>Account added</p>
+            <small id="successEmail">alice@example.com</small>
+            <small id="successPlan">enterprise</small>
+          </div>
+          <div class="dialog-actions">
+            <button class="dock-btn accent" id="successDone" type="button">Done</button>
+          </div>
+        </div>
+
+        <!-- Step: error -->
+        <div class="step" id="stepError">
+          <div class="error-state">
+            <p id="errorMessage">Something went wrong.</p>
+          </div>
+          <div class="dialog-actions">
+            <button class="dock-btn" id="errorRetry" type="button">Try again</button>
+            <button class="dock-btn" id="errorClose" type="button">Close</button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- OAuth dialog -->
+    <dialog id="authDialog">
+      <header class="dialog-header">
+        <h3>OAuth setup</h3>
+        <button class="dialog-close" id="closeAuthDialog" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div class="dialog-body" id="authDock"></div>
+    </dialog>
+
+    <script>
+      const accounts = [
+        {
+          id: "acc-alice",
+          name: "alice.primary@example.com",
+          plan: "enterprise",
+          health: "healthy",
+          state: "active",
+          inflight: 12,
+          load: 38,
+          latency: 162,
+          errorEwma: 0.04,
+          cooldown: false,
+          capability: true,
+          costNorm: 0.28,
+          routed24h: 9240,
+          stickyHit: 76,
+          quotaPrimary: 42,
+          quotaSecondary: 31,
+          failovers: 1,
+          note: "Primary low-latency pool",
+        },
+        {
+          id: "acc-research",
+          name: "research.bot@example.com",
+          plan: "plus",
+          health: "healthy",
+          state: "active",
+          inflight: 18,
+          load: 57,
+          latency: 214,
+          errorEwma: 0.08,
+          cooldown: false,
+          capability: true,
+          costNorm: 0.44,
+          routed24h: 6078,
+          stickyHit: 64,
+          quotaPrimary: 61,
+          quotaSecondary: 54,
+          failovers: 2,
+          note: "Reasoning-heavy spillover",
+        },
+        {
+          id: "acc-night",
+          name: "night.shift@example.com",
+          plan: "enterprise",
+          health: "healthy",
+          state: "active",
+          inflight: 9,
+          load: 29,
+          latency: 171,
+          errorEwma: 0.05,
+          cooldown: false,
+          capability: true,
+          costNorm: 0.31,
+          routed24h: 5110,
+          stickyHit: 69,
+          quotaPrimary: 35,
+          quotaSecondary: 27,
+          failovers: 0,
+          note: "Low load reserve",
+        },
+        {
+          id: "acc-overflow",
+          name: "overflow.pool@example.com",
+          plan: "plus",
+          health: "strained",
+          state: "active",
+          inflight: 27,
+          load: 84,
+          latency: 401,
+          errorEwma: 0.22,
+          cooldown: true,
+          capability: true,
+          costNorm: 0.66,
+          routed24h: 2982,
+          stickyHit: 41,
+          quotaPrimary: 88,
+          quotaSecondary: 79,
+          failovers: 6,
+          note: "Overflow only for burst containment",
+        },
+      ];
+
+      const routeSeed = [
+        ["01:19:44", "req_83ad2", "gpt-5.4", "acc-alice", 1280, 176, "ok", "SSE", "sess_7fa1"],
+        ["01:19:43", "req_83ad1", "gpt-5.3-codex", "acc-research", 940, 248, "ok", "WS", "sess_7fa1"],
+        ["01:19:40", "req_83ad0", "gpt-5.4", "acc-alice", 1630, 202, "ok", "SSE", "sess_7fa1"],
+        ["01:19:37", "req_83acf", "gpt-5.1-codex-mini", "acc-night", 510, 188, "ok", "Compact", "sess_2af0"],
+        ["01:19:34", "req_83ace", "gpt-5.3-codex", "acc-overflow", 1210, 432, "warn", "WS", "sess_3dc4"],
+        ["01:19:31", "req_83acd", "gpt-5.4", "acc-alice", 1770, 209, "ok", "SSE", "sess_44ba"],
+        ["01:19:28", "req_83acc", "gpt-5.4", "acc-research", 1190, 266, "ok", "SSE", "sess_51dc"],
+        ["01:19:24", "req_83acb", "gpt-5.1-codex-mini", "acc-night", 640, 194, "ok", "Compact", "sess_51dc"],
+        ["01:19:20", "req_83aca", "gpt-5.3-codex", "acc-overflow", 980, 471, "error", "WS", "sess_51dc"],
+        ["01:19:17", "req_83ac9", "gpt-5.4", "acc-alice", 1420, 183, "ok", "SSE", "sess_88e0"],
+        ["01:19:13", "req_83ac8", "gpt-5.4", "acc-research", 1370, 251, "ok", "SSE", "sess_88e0"],
+        ["01:19:10", "req_83ac7", "gpt-5.3-codex", "acc-night", 760, 207, "ok", "Compact", "sess_912a"],
+        ["01:19:07", "req_83ac6", "gpt-5.4", "acc-alice", 1110, 174, "ok", "SSE", "sess_912a"],
+        ["01:19:03", "req_83ac5", "gpt-5.4", "acc-research", 1550, 241, "ok", "SSE", "sess_aef1"],
+        ["01:19:00", "req_83ac4", "gpt-5.3-codex", "acc-alice", 1030, 187, "ok", "Transcribe", "sess_d084"],
+      ];
+
+      const rows = routeSeed.map((route, index) => ({
+        time: route[0],
+        id: route[1],
+        model: route[2],
+        accountId: route[3],
+        tokens: route[4],
+        latency: route[5],
+        status: route[6],
+        protocol: route[7],
+        sessionId: route[8],
+        sticky: index % 4 !== 0,
+      }));
+
+      const routingModes = [
+        {
+          id: "power_of_two_choices",
+          label: "Power of Two Choices",
+          desc: "Sample two random eligible accounts, pick the one with the lower composite score S(a,r). Near-optimal balance with O(1) cost.",
+          formula: "pick = argmin(S(a,r), S(b,r)) where a,b sampled uniformly",
+          usesComposite: true,
+        },
+        {
+          id: "usage_weighted",
+          label: "Usage Weighted",
+          desc: "Score all eligible accounts using the composite formula and pick the lowest. Full evaluation with global optimum.",
+          formula: "pick = argmin_a S(a,r)",
+          usesComposite: true,
+        },
+        {
+          id: "round_robin",
+          label: "Round Robin",
+          desc: "Cycle through eligible accounts in fixed order. Ignores load, latency, and quota.",
+          formula: "pick = accounts[i % N], i = i + 1",
+          usesComposite: false,
+        },
+        {
+          id: "least_outstanding_requests",
+          label: "Least Outstanding",
+          desc: "Pick the account with the fewest in-flight requests. Minimizes queue depth.",
+          formula: "pick = argmin_a q(a)",
+          usesComposite: false,
+        },
+        {
+          id: "latency_ewma",
+          label: "Latency EWMA",
+          desc: "Pick the account with the lowest latency moving average. Best for latency-sensitive workloads.",
+          formula: "pick = argmin_a l(a)",
+          usesComposite: false,
+        },
+        {
+          id: "success_rate_weighted",
+          label: "Success Rate Weighted",
+          desc: "Probabilistic selection weighted by success rate raised to power rho. Avoids failing accounts.",
+          formula: "P(a) = p_success(a)^ρ / Σ p_success(j)^ρ",
+          usesComposite: false,
+          params: { rho: 2 },
+        },
+        {
+          id: "headroom_score",
+          label: "Headroom Score",
+          desc: "Pick the account with the most remaining quota headroom. Spreads usage evenly across quotas.",
+          formula: "pick = argmax_a h(a) = 1 − (w_p·u_p + w_s·u_s)",
+          usesComposite: false,
+        },
+        {
+          id: "weighted_round_robin",
+          label: "Weighted Round Robin",
+          desc: "Deficit-based round robin with per-account weights. Accounts with higher weight get proportionally more traffic.",
+          formula: "credit(a) += w(a) each cycle, pick = argmax_a credit(a), then credit(a) -= 1",
+          usesComposite: false,
+        },
+        {
+          id: "cost_aware",
+          label: "Cost Aware",
+          desc: "Pick the cheapest eligible account subject to headroom and error guardrails.",
+          formula: "pick = argmin_a cost(a,r) where h(a) > threshold and e(a) < limit",
+          usesComposite: false,
+        },
+        {
+          id: "deadline_aware",
+          label: "Deadline Aware",
+          desc: "Dynamically increase latency and error weights as request deadline slack decreases. For time-bounded workloads.",
+          formula: "S(a,r) with β,γ scaled by 1/slack — tight deadlines favor fast, reliable accounts",
+          usesComposite: true,
+        },
+      ];
+
+      const scoringModel = {
+        wp: 0.35,
+        ws: 0.65,
+        alpha: 0.3,
+        beta: 0.25,
+        gamma: 0.2,
+        delta: 0.2,
+        zeta: 0.05,
+        eta: 1,
+        eps: 1e-9,
+      };
+
+      const runtimeState = {
+        backend: "running",
+        health: "ok",
+        pausedRoutes: false,
+        autoRestart: true,
+        bind: "127.0.0.1:2455",
+        events: [
+          "01:19:58 /health green",
+          "01:19:40 websocket bridge accepted session",
+          "01:19:20 restart policy: armed",
+          "01:18:52 sticky session reused for sess_7fa1",
+          "01:18:30 account overflow.pool entered cooldown",
+          "01:18:14 failover: acc-overflow \u2192 acc-alice",
+          "01:17:55 /health green",
+          "01:17:40 SSE stream completed for req_83abf",
+        ],
+      };
+
+      const authState = {
+        tenantDomain: "your-tenant.us.auth0.com",
+        clientId: "clb_desktop_client_id",
+        audience: "https://api.tightrope.local",
+        callbackPath: "/api/oauth/callback",
+        listenerPort: 24680,
+        listenerUrl: "",
+        listenerRunning: false,
+        initStatus: "not started",
+        lastResponse: "none",
+      };
+      authState.listenerUrl = `http://127.0.0.1:${authState.listenerPort}${authState.callbackPath}`;
+
+      const hardBlockedStates = new Set(["paused", "deactivated", "rate_limited", "quota_blocked"]);
+
+      let selectedAccountId = accounts[0].id;
+      let selectedRouteId = rows[0].id;
+      let routingMode = "power_of_two_choices";
+      let roundRobinCursor = 0;
+      let searchQuery = "";
+      let inspectorOpen = false;
+
+      const accountsListEl = document.getElementById("accountsList");
+      const routeRowsEl = document.getElementById("routeRows");
+      const inspectorEl = document.getElementById("inspector");
+      const runtimeDockEl = document.getElementById("runtimeDock");
+      const eventsDockEl = document.getElementById("eventsDock");
+      const authDockEl = document.getElementById("authDock");
+      const selectedHintEl = document.getElementById("selectedHint");
+      const inspectorStateEl = document.getElementById("inspectorState");
+      const strategyLabelEl = document.getElementById("strategyLabel");
+      const activeAccountsEl = document.getElementById("activeAccounts");
+      const bindLabelEl = document.getElementById("bindLabel");
+      const routerStateBadgeEl = document.getElementById("routerStateBadge");
+      const searchInputEl = document.getElementById("routeSearch");
+      const pauseRouterButtonEl = document.getElementById("pauseRouter");
+      const backendDialogEl = document.getElementById("backendDialog");
+      const authDialogEl = document.getElementById("authDialog");
+      const addAccountDialogEl = document.getElementById("addAccountDialog");
+
+      function formatNumber(value) {
+        return value.toLocaleString();
+      }
+
+      function normalize(value, min, max) {
+        return (value - min) / (max - min + scoringModel.eps);
+      }
+
+      function nowStamp() {
+        return new Date().toTimeString().slice(0, 8);
+      }
+
+      function statusClass(status) {
+        return status === "ok" ? "ok" : status === "warn" ? "warn" : "error";
+      }
+
+      function pushRuntimeEvent(text) {
+        runtimeState.events.unshift(`${nowStamp()} ${text}`);
+        runtimeState.events = runtimeState.events.slice(0, 12);
+      }
+
+      function modeLabel() {
+        return routingModes.find((mode) => mode.id === routingMode)?.label || routingMode;
+      }
+
+      function currentRouterState() {
+        if (runtimeState.backend !== "running") {
+          return "stopped";
+        }
+        if (runtimeState.pausedRoutes) {
+          return "paused";
+        }
+        if (runtimeState.health !== "ok") {
+          return "degraded";
+        }
+        return "running";
+      }
+
+      function compositeScore(ctx) {
+        return (
+          scoringModel.alpha * ctx.qNorm +
+          scoringModel.beta * ctx.lNorm +
+          scoringModel.gamma * ctx.errorEwma +
+          scoringModel.delta * (1 - ctx.h) +
+          scoringModel.zeta * ctx.costNorm +
+          scoringModel.eta * ctx.c
+        );
+      }
+
+      function computeModeScore(ctx) {
+        switch (routingMode) {
+          case "round_robin":
+            return ((ctx.index - roundRobinCursor + accounts.length) % accounts.length) / (accounts.length + scoringModel.eps);
+          case "weighted_round_robin":
+            return ((ctx.index - roundRobinCursor + accounts.length) % accounts.length) / (accounts.length + scoringModel.eps);
+          case "least_outstanding_requests":
+            return ctx.qNorm;
+          case "latency_ewma":
+            return ctx.lNorm;
+          case "usage_weighted":
+            return 1 - ctx.h;
+          case "headroom_score":
+            return 1 - ctx.h;
+          case "success_rate_weighted": {
+            const mode = routingModes.find((m) => m.id === "success_rate_weighted");
+            const rho = mode?.params?.rho ?? 2;
+            const pSuccess = Math.max(scoringModel.eps, 1 - ctx.errorEwma);
+            return 1 / (Math.pow(pSuccess, rho) + scoringModel.eps);
+          }
+          case "cost_aware":
+            return ctx.costNorm;
+          case "deadline_aware": {
+            const slackFactor = 2.0;
+            return (
+              scoringModel.alpha * ctx.qNorm +
+              (scoringModel.beta * slackFactor) * ctx.lNorm +
+              (scoringModel.gamma * slackFactor) * ctx.errorEwma +
+              scoringModel.delta * (1 - ctx.h) +
+              scoringModel.zeta * ctx.costNorm +
+              scoringModel.eta * ctx.c
+            );
+          }
+          case "power_of_two_choices":
+          default:
+            return compositeScore(ctx);
+        }
+      }
+
+      function deriveMetrics() {
+        const inflights = accounts.map((account) => account.inflight);
+        const latencies = accounts.map((account) => account.latency);
+        const costs = accounts.map((account) => account.costNorm);
+
+        const minQ = Math.min(...inflights);
+        const maxQ = Math.max(...inflights);
+        const minL = Math.min(...latencies);
+        const maxL = Math.max(...latencies);
+        const minC = Math.min(...costs);
+        const maxC = Math.max(...costs);
+
+        const metrics = new Map();
+        accounts.forEach((account, index) => {
+          const qNorm = normalize(account.inflight, minQ, maxQ);
+          const lNorm = normalize(account.latency, minL, maxL);
+          const costNorm = normalize(account.costNorm, minC, maxC);
+          const uPrimary = account.quotaPrimary / 100;
+          const uSecondary = account.quotaSecondary / 100;
+          const h = 1 - (scoringModel.wp * uPrimary + scoringModel.ws * uSecondary);
+          const c = account.cooldown ? 1 : 0;
+          const capability = account.capability && !hardBlockedStates.has(account.state);
+          const score = capability
+            ? computeModeScore({ index, qNorm, lNorm, costNorm, h, c, errorEwma: account.errorEwma })
+            : Infinity;
+          metrics.set(account.id, { qNorm, lNorm, costNorm, h, c, capability, score });
+        });
+        return metrics;
+      }
+
+      function filteredRows() {
+        const query = searchQuery.trim().toLowerCase();
+        return rows.filter((row) => {
+          const accountName = accounts.find((account) => account.id === row.accountId)?.name || row.accountId;
+          if (selectedAccountId && row.accountId !== selectedAccountId) {
+            return false;
+          }
+          if (!query) {
+            return true;
+          }
+          return [row.id, row.model, row.protocol, accountName, row.sessionId]
+            .join(" ")
+            .toLowerCase()
+            .includes(query);
+        });
+      }
+
+      function ensureSelection() {
+        const visibleRows = filteredRows();
+        if (visibleRows.length === 0) {
+          return;
+        }
+        if (!visibleRows.some((row) => row.id === selectedRouteId)) {
+          selectedRouteId = visibleRows[0].id;
+        }
+      }
+
+      function setRoutingMode(nextMode) {
+        if (!routingModes.some((mode) => mode.id === nextMode)) {
+          return;
+        }
+        routingMode = nextMode;
+        if (routingMode === "round_robin") {
+          roundRobinCursor = (roundRobinCursor + 1) % accounts.length;
+        }
+        pushRuntimeEvent(`routing policy set to ${modeLabel()}`);
+        renderAll();
+      }
+
+      function setRuntimeState(action) {
+        if (action === "start") {
+          runtimeState.backend = "running";
+          runtimeState.health = "ok";
+          pushRuntimeEvent("backend started");
+        }
+        if (action === "restart") {
+          runtimeState.backend = "running";
+          runtimeState.health = "ok";
+          runtimeState.pausedRoutes = false;
+          pushRuntimeEvent("backend restarted");
+        }
+        if (action === "stop") {
+          runtimeState.backend = "stopped";
+          runtimeState.health = "warn";
+          runtimeState.pausedRoutes = false;
+          pushRuntimeEvent("backend stopped");
+        }
+        renderAll();
+      }
+
+      function toggleRoutePause() {
+        if (runtimeState.backend !== "running") {
+          pushRuntimeEvent("pause ignored: backend is stopped");
+          renderAll();
+          return;
+        }
+        runtimeState.pausedRoutes = !runtimeState.pausedRoutes;
+        pushRuntimeEvent(runtimeState.pausedRoutes ? "new routes paused" : "new routes resumed");
+        renderAll();
+      }
+
+      function toggleAutoRestart() {
+        runtimeState.autoRestart = !runtimeState.autoRestart;
+        pushRuntimeEvent(`auto-restart ${runtimeState.autoRestart ? "enabled" : "disabled"}`);
+        renderAll();
+      }
+
+      function buildListenerUrl() {
+        return `http://127.0.0.1:${authState.listenerPort}${authState.callbackPath}`;
+      }
+
+      function setAuthField(field, value) {
+        authState[field] = value;
+        if (field === "callbackPath" && !authState.callbackPath.startsWith("/")) {
+          authState.callbackPath = `/${authState.callbackPath}`;
+        }
+        authState.listenerUrl = buildListenerUrl();
+      }
+
+      function createListenerUrl() {
+        authState.listenerPort = 22000 + Math.floor(Math.random() * 15000);
+        authState.listenerUrl = buildListenerUrl();
+        authState.initStatus = "callback URL ready";
+        pushRuntimeEvent(`callback URL generated: ${authState.listenerUrl}`);
+        renderAll();
+      }
+
+      function toggleListener() {
+        if (!authState.listenerUrl) {
+          authState.listenerUrl = buildListenerUrl();
+        }
+        authState.listenerRunning = !authState.listenerRunning;
+        authState.initStatus = authState.listenerRunning ? "listener running" : "listener stopped";
+        pushRuntimeEvent(`callback listener ${authState.listenerRunning ? "started" : "stopped"}`);
+        renderAll();
+      }
+
+      function initAuth0() {
+        if (!authState.tenantDomain.trim() || !authState.clientId.trim()) {
+          authState.initStatus = "missing Auth0 domain or client ID";
+          pushRuntimeEvent("Auth0 setup failed: add domain and client ID");
+          renderAll();
+          return;
+        }
+        authState.listenerUrl = buildListenerUrl();
+        authState.initStatus = "Auth0 ready";
+        pushRuntimeEvent(`Auth0 initialized for ${authState.tenantDomain}`);
+        renderAll();
+      }
+
+      function captureAuthResponse() {
+        if (!authState.listenerRunning) {
+          authState.initStatus = "listener is not running";
+          pushRuntimeEvent("callback ignored: start listener first");
+          renderAll();
+          return;
+        }
+        const code = `code_${Math.random().toString(36).slice(2, 10)}`;
+        authState.lastResponse = `${nowStamp()} ${code}`;
+        authState.initStatus = "callback received";
+        pushRuntimeEvent(`callback received (${code})`);
+        renderAll();
+      }
+
+      function renderToolbar(metrics) {
+        const eligibleCount = Array.from(metrics.values()).filter((metric) => metric.capability).length;
+        const state = currentRouterState();
+        const stateTitle = state.charAt(0).toUpperCase() + state.slice(1);
+        strategyLabelEl.textContent = modeLabel();
+        activeAccountsEl.textContent = `${eligibleCount}/${accounts.length}`;
+        bindLabelEl.textContent = runtimeState.bind;
+        pauseRouterButtonEl.textContent = runtimeState.pausedRoutes ? "Resume Routes" : "Pause Routes";
+        routerStateBadgeEl.dataset.state = state;
+        routerStateBadgeEl.querySelector("strong").textContent = `Router ${stateTitle.toLowerCase()}`;
+        routerStateBadgeEl.querySelector("span:last-child").textContent =
+          state === "stopped"
+            ? "Waiting for backend start"
+            : state === "paused"
+              ? "New traffic paused, sessions visible"
+              : state === "degraded"
+                ? "Health checks need attention"
+                : "Child process managed by Electron";
+      }
+
+      function renderKpis(metrics) {
+        const visible = filteredRows();
+        const latencies = visible.length > 0 ? visible.map((row) => row.latency).sort((a, b) => a - b) : [0];
+        const p95Index = Math.max(0, Math.floor(latencies.length * 0.95) - 1);
+        const p95 = latencies[p95Index] || 0;
+        const failover = accounts.reduce((sum, account) => sum + account.failovers, 0);
+        const sticky = Math.round(accounts.reduce((sum, account) => sum + account.stickyHit, 0) / accounts.length);
+        const rpm = Math.max(0, Math.round(1924 * (visible.length / rows.length || 1)));
+
+        document.getElementById("kpiRpm").textContent = formatNumber(rpm);
+        document.getElementById("kpiP95").textContent = `${p95} ms`;
+        document.getElementById("kpiFailover").textContent = String(failover);
+        document.getElementById("kpiSticky").textContent = `${sticky}%`;
+      }
+
+      function renderAccounts(metrics) {
+        accountsListEl.innerHTML = "";
+
+        // Find the account that would be selected for the next request
+        let routedAccountId = null;
+        let bestScore = Infinity;
+        accounts.forEach((account) => {
+          const metric = metrics.get(account.id);
+          if (metric && metric.capability && Number.isFinite(metric.score) && metric.score < bestScore) {
+            bestScore = metric.score;
+            routedAccountId = account.id;
+          }
+        });
+
+        accounts.forEach((account) => {
+          const metric = metrics.get(account.id);
+          const scoreText = metric && Number.isFinite(metric.score) ? metric.score.toFixed(3) : "\u221e";
+          const isRouted = account.id === routedAccountId;
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `account-item${account.id === selectedAccountId ? " active" : ""}${isRouted ? " routed" : ""}`;
+          button.innerHTML = `
+            <div class="account-top">
+              <span class="account-name">${account.name}</span>
+              ${isRouted ? '<span class="routed-badge"><span class="routed-dot"></span>routed</span>' : `<span class="account-plan">${account.plan}</span>`}
+            </div>
+            <div class="account-meta-row">
+              <span class="account-meta">Load <strong>${account.load}%</strong></span>
+              <span class="account-meta">Latency <strong>${account.latency} ms</strong></span>
+            </div>
+            <div class="account-meta-row">
+              <span class="account-meta">Score <strong>${scoreText}</strong></span>
+              <span class="account-meta">${metric && metric.capability ? "eligible" : "blocked"}</span>
+            </div>
+            <div class="mini-bar">
+              <div class="mini-fill${account.load >= 80 ? " hot" : ""}" style="width:${account.load}%"></div>
+            </div>
+          `;
+          button.addEventListener("click", () => {
+            selectedAccountId = account.id;
+            ensureSelection();
+            renderAll();
+          });
+          accountsListEl.appendChild(button);
+        });
+      }
+
+      function renderTable(metrics) {
+        const visible = filteredRows();
+        ensureSelection();
+        routeRowsEl.innerHTML = "";
+
+        if (visible.length === 0) {
+          routeRowsEl.innerHTML = `
+            <tr>
+              <td colspan="9" class="empty-state">No routes match the current account and search filter.</td>
+            </tr>
+          `;
+          return;
+        }
+
+        visible.forEach((row) => {
+          const accountName = accounts.find((account) => account.id === row.accountId)?.name || row.accountId;
+          const metric = metrics.get(row.accountId);
+          const scoreText = metric && Number.isFinite(metric.score) ? metric.score.toFixed(3) : "\u221e";
+          const tr = document.createElement("tr");
+          tr.tabIndex = 0;
+          tr.className = `route-row${row.accountId === selectedAccountId ? " match" : ""}${row.id === selectedRouteId ? " active" : ""}`;
+          tr.innerHTML = `
+            <td>${row.time}</td>
+            <td class="mono">${row.id}</td>
+            <td>${row.protocol}</td>
+            <td class="model-cell">${row.model}</td>
+            <td class="account-cell">${accountName}</td>
+            <td>${formatNumber(row.tokens)}</td>
+            <td>${row.latency} ms</td>
+            <td>${scoreText}</td>
+            <td><span class="status-badge ${statusClass(row.status)}">${row.status}</span></td>
+          `;
+          const selectRow = () => {
+            selectedRouteId = row.id;
+            selectedAccountId = row.accountId;
+            inspectorOpen = true;
+            renderAll();
+          };
+          tr.addEventListener("click", selectRow);
+          tr.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              selectRow();
+            }
+          });
+          routeRowsEl.appendChild(tr);
+        });
+      }
+
+      function renderInspector(metrics) {
+        const account = accounts.find((candidate) => candidate.id === selectedAccountId) || accounts[0];
+        const route = rows.find((candidate) => candidate.id === selectedRouteId) || rows[0];
+        const routeAccount = accounts.find((candidate) => candidate.id === route.accountId) || account;
+        const metric = metrics.get(routeAccount.id);
+        const scoreText = metric && Number.isFinite(metric.score) ? metric.score.toFixed(3) : "\u221e";
+        const stateText = runtimeState.backend === "running" ? routeAccount.health : "backend stopped";
+        if (inspectorStateEl) inspectorStateEl.textContent = stateText;
+
+        inspectorEl.innerHTML = `
+          <section class="detail-section">
+            <div class="detail-heading">
+              <strong>Selected route</strong>
+              <span>${route.protocol}</span>
+            </div>
+            <div class="key-grid">
+              <div class="key-row"><span class="key-label">Request</span><span class="key-value mono">${route.id}</span></div>
+              <div class="key-row"><span class="key-label">Session</span><span class="key-value mono">${route.sessionId}</span></div>
+              <div class="key-row"><span class="key-label">Model</span><span class="key-value">${route.model}</span></div>
+              <div class="key-row"><span class="key-label">Account</span><span class="key-value">${routeAccount.name}</span></div>
+              <div class="key-row"><span class="key-label">Latency</span><span class="key-value">${route.latency} ms</span></div>
+              <div class="key-row"><span class="key-label">Score</span><span class="key-value">${scoreText}</span></div>
+              <div class="key-row"><span class="key-label">Affinity</span><span class="key-value">${route.sticky ? "sticky reuse" : "new allocation"}</span></div>
+              <div class="key-row"><span class="key-label">Result</span><span class="key-value">${route.status === "ok" ? "served" : route.status === "warn" ? "fallback applied" : "needs inspection"}</span></div>
+            </div>
+          </section>
+
+          <section class="detail-section">
+            <div class="detail-heading">
+              <strong>Account headroom</strong>
+              <span>${routeAccount.note}</span>
+            </div>
+            <div class="summary-grid">
+              <div><span>Plan</span><strong>${routeAccount.plan}</strong></div>
+              <div><span>Requests (24h)</span><strong>${formatNumber(routeAccount.routed24h)}</strong></div>
+              <div><span>Inflight</span><strong>${routeAccount.inflight}</strong></div>
+              <div><span>Sticky hit</span><strong>${routeAccount.stickyHit}%</strong></div>
+            </div>
+            <div class="quota-row">
+              <span class="dock-label">Primary quota</span>
+              <strong>${routeAccount.quotaPrimary}%</strong>
+            </div>
+            <div class="quota-track">
+              <div class="quota-fill${routeAccount.quotaPrimary >= 80 ? " hot" : ""}" style="width:${routeAccount.quotaPrimary}%"></div>
+            </div>
+            <div class="quota-row">
+              <span class="dock-label">Secondary quota</span>
+              <strong>${routeAccount.quotaSecondary}%</strong>
+            </div>
+            <div class="quota-track">
+              <div class="quota-fill${routeAccount.quotaSecondary >= 80 ? " hot" : ""}" style="width:${routeAccount.quotaSecondary}%"></div>
+            </div>
+            <div class="note-box">
+              ${routeAccount.cooldown ? "In cooldown. The router prefers other accounts until the error signal decays." : "Eligible and contributing to the live route set without cooldown penalties."}
+            </div>
+          </section>
+
+          <details class="detail-fold">
+            <summary>
+              <strong>Strategy tuning</strong>
+              <span>${modeLabel()}</span>
+            </summary>
+            <div class="fold-content">
+              <div class="mode-grid">
+                ${routingModes
+                  .map(
+                    (mode) => `
+                      <button type="button" class="mode-btn${mode.id === routingMode ? " active" : ""}" data-mode="${mode.id}">${mode.label}</button>
+                    `,
+                  )
+                  .join("")}
+              </div>
+              <div class="weight-stack">
+                ${["alpha", "beta", "gamma", "delta", "zeta", "eta"]
+                  .map(
+                    (key) => `
+                      <label class="weight-row">
+                        <span>${key}</span>
+                        <input type="range" min="0" max="1" step="0.01" value="${scoringModel[key]}" data-weight="${key}">
+                        <strong>${scoringModel[key].toFixed(2)}</strong>
+                      </label>
+                    `,
+                  )
+                  .join("")}
+              </div>
+              <div class="key-grid">
+                <div class="key-row"><span class="key-label">Queue pressure</span><span class="key-value">${metric ? metric.qNorm.toFixed(2) : "-"}</span></div>
+                <div class="key-row"><span class="key-label">Latency pressure</span><span class="key-value">${metric ? metric.lNorm.toFixed(2) : "-"}</span></div>
+                <div class="key-row"><span class="key-label">Headroom</span><span class="key-value">${metric ? metric.h.toFixed(2) : "-"}</span></div>
+                <div class="key-row"><span class="key-label">Cooldown flag</span><span class="key-value">${metric ? metric.c : "-"}</span></div>
+              </div>
+            </div>
+          </details>
+        `;
+
+        inspectorEl.querySelectorAll("[data-mode]").forEach((button) => {
+          button.addEventListener("click", () => setRoutingMode(button.dataset.mode));
+        });
+
+        inspectorEl.querySelectorAll("input[data-weight]").forEach((slider) => {
+          updateSliderFill(slider);
+          let dragging = false;
+          slider.addEventListener("mousedown", () => { dragging = true; });
+          slider.addEventListener("input", () => {
+            const key = slider.dataset.weight;
+            if (!key) return;
+            scoringModel[key] = Number(slider.value);
+            updateSliderFill(slider);
+            const strong = slider.parentElement.querySelector("strong");
+            if (strong) strong.textContent = Number(slider.value).toFixed(2);
+            // Only update non-inspector parts while dragging
+            if (!dragging) renderAll();
+          });
+          const finishDrag = () => {
+            if (dragging) {
+              dragging = false;
+              renderAll();
+            }
+          };
+          slider.addEventListener("mouseup", finishDrag);
+          slider.addEventListener("mouseleave", finishDrag);
+        });
+      }
+
+      function renderRuntimeDock() {
+        const state = currentRouterState();
+        runtimeDockEl.innerHTML = `
+          <div class="summary-grid">
+            <div><span>Router</span><strong>${state}</strong></div>
+            <div><span>Backend</span><strong>${runtimeState.backend}</strong></div>
+            <div><span>Health</span><strong>${runtimeState.health}</strong></div>
+            <div><span>Restart</span><strong>${runtimeState.autoRestart ? "armed" : "manual"}</strong></div>
+          </div>
+          <div class="button-row">
+            <button class="dock-btn" id="runtimeStart" type="button">Start</button>
+            <button class="dock-btn" id="runtimeRestart" type="button">Restart</button>
+            <button class="dock-btn" id="runtimeStop" type="button">Stop</button>
+            <button class="dock-btn accent" id="runtimeAuto" type="button">${runtimeState.autoRestart ? "Disable Auto-Restart" : "Enable Auto-Restart"}</button>
+          </div>
+          <div class="footnote"><span class="mono">${runtimeState.bind}</span> loopback \u2022 ${runtimeState.pausedRoutes ? "traffic paused" : "accepting traffic"}</div>
+        `;
+
+        runtimeDockEl.querySelector("#runtimeStart")?.addEventListener("click", () => setRuntimeState("start"));
+        runtimeDockEl.querySelector("#runtimeRestart")?.addEventListener("click", () => setRuntimeState("restart"));
+        runtimeDockEl.querySelector("#runtimeStop")?.addEventListener("click", () => setRuntimeState("stop"));
+        runtimeDockEl.querySelector("#runtimeAuto")?.addEventListener("click", toggleAutoRestart);
+      }
+
+      function renderEventsDock() {
+        eventsDockEl.innerHTML = runtimeState.events
+          .slice(0, 10)
+          .map(
+            (event) => `<div class="log-line"><span class="log-ts">${event.slice(0, 8)}</span><span class="log-msg">${event.slice(9)}</span></div>`,
+          )
+          .join("");
+      }
+
+      function renderAuthDock() {
+        const callbackUrl = authState.listenerUrl || buildListenerUrl();
+        const callbackHost = `127.0.0.1:${authState.listenerPort}`;
+        authDockEl.innerHTML = `
+          <div class="summary-grid">
+            <div><span>Setup</span><strong>${authState.initStatus}</strong></div>
+            <div><span>Listener</span><strong>${authState.listenerRunning ? "running" : "stopped"}</strong></div>
+            <div><span>Callback</span><strong class="mono">${callbackHost}</strong></div>
+            <div><span>Last callback</span><strong>${authState.lastResponse}</strong></div>
+          </div>
+          <div class="button-row">
+            <button class="dock-btn" id="authInit" type="button">Initialize</button>
+            <button class="dock-btn" id="authCreateUrl" type="button">Generate URL</button>
+            <button class="dock-btn" id="authToggleListener" type="button">${authState.listenerRunning ? "Stop Listener" : "Start Listener"}</button>
+            <button class="dock-btn accent" id="authCapture" type="button">Simulate Callback</button>
+          </div>
+          <div class="footnote">${authState.tenantDomain} \u2022 <span class="mono">${callbackUrl}</span></div>
+          <div class="field-stack">
+            <label class="field-row">
+              <span class="field-label">Auth0 domain</span>
+              <input class="auth-input" id="authTenant" type="text" value="${authState.tenantDomain}" />
+            </label>
+            <label class="field-row">
+              <span class="field-label">Client ID</span>
+              <input class="auth-input" id="authClient" type="text" value="${authState.clientId}" />
+            </label>
+            <label class="field-row">
+              <span class="field-label">Callback path</span>
+              <input class="auth-input" id="authPath" type="text" value="${authState.callbackPath}" />
+            </label>
+          </div>
+        `;
+
+        authDockEl.querySelector("#authInit")?.addEventListener("click", initAuth0);
+        authDockEl.querySelector("#authCreateUrl")?.addEventListener("click", createListenerUrl);
+        authDockEl.querySelector("#authToggleListener")?.addEventListener("click", toggleListener);
+        authDockEl.querySelector("#authCapture")?.addEventListener("click", captureAuthResponse);
+
+        authDockEl.querySelector("#authTenant")?.addEventListener("input", (event) => {
+          setAuthField("tenantDomain", event.target.value);
+        });
+        authDockEl.querySelector("#authClient")?.addEventListener("input", (event) => {
+          setAuthField("clientId", event.target.value);
+        });
+        authDockEl.querySelector("#authPath")?.addEventListener("input", (event) => {
+          setAuthField("callbackPath", event.target.value);
+        });
+      }
+
+      function renderSelectedHint() {
+        const account = accounts.find((candidate) => candidate.id === selectedAccountId);
+        selectedHintEl.textContent = account ? `Focus: ${account.name}` : "Focus: all accounts";
+      }
+
+      function renderAll() {
+        const metrics = deriveMetrics();
+        ensureSelection();
+
+        const routeStageEl = document.querySelector(".route-stage");
+        routeStageEl.classList.toggle("inspector-open", inspectorOpen);
+
+        renderToolbar(metrics);
+        renderKpis(metrics);
+        renderAccounts(metrics);
+        renderTable(metrics);
+        if (inspectorOpen) {
+          renderInspector(metrics);
+        }
+        renderRuntimeDock();
+        renderEventsDock();
+        renderAuthDock();
+        renderSelectedHint();
+      }
+
+      // Toolbar actions
+      document.getElementById("startRouter").addEventListener("click", () => setRuntimeState("start"));
+      document.getElementById("restartRouter").addEventListener("click", () => setRuntimeState("restart"));
+      document.getElementById("pauseRouter").addEventListener("click", toggleRoutePause);
+      searchInputEl.addEventListener("input", (event) => {
+        searchQuery = event.target.value;
+        ensureSelection();
+        renderAll();
+      });
+
+      // Dialog triggers
+      document.getElementById("openBackendDialog").addEventListener("click", () => {
+        renderRuntimeDock();
+        backendDialogEl.showModal();
+      });
+      document.getElementById("closeBackendDialog").addEventListener("click", () => {
+        backendDialogEl.close();
+      });
+      document.getElementById("openAuthDialog").addEventListener("click", () => {
+        renderAuthDock();
+        authDialogEl.showModal();
+      });
+      document.getElementById("closeAuthDialog").addEventListener("click", () => {
+        authDialogEl.close();
+      });
+
+      // ── Add Account dialog ──
+      const addAccountSteps = ["stepMethod", "stepImport", "stepBrowser", "stepDevice", "stepSuccess", "stepError"];
+      let deviceCountdownTimer = null;
+
+      function showStep(stepId) {
+        addAccountSteps.forEach((id) => {
+          document.getElementById(id).classList.toggle("active", id === stepId);
+        });
+        const title = document.getElementById("addAccountTitle");
+        const titles = {
+          stepMethod: "Add account",
+          stepImport: "Import auth.json",
+          stepBrowser: "Browser sign-in",
+          stepDevice: "Device code",
+          stepSuccess: "Add account",
+          stepError: "Add account",
+        };
+        title.textContent = titles[stepId] || "Add account";
+      }
+
+      function resetAddAccountDialog() {
+        if (deviceCountdownTimer) {
+          clearInterval(deviceCountdownTimer);
+          deviceCountdownTimer = null;
+        }
+        showStep("stepMethod");
+        document.getElementById("fileName").textContent = "";
+        document.getElementById("importSubmit").disabled = true;
+        document.getElementById("manualCallback").value = "";
+        document.getElementById("fileDrop").classList.remove("dragover");
+      }
+
+      document.getElementById("openAddAccount").addEventListener("click", () => {
+        resetAddAccountDialog();
+        addAccountDialogEl.showModal();
+      });
+
+      document.getElementById("closeAddAccount").addEventListener("click", () => {
+        addAccountDialogEl.close();
+        resetAddAccountDialog();
+      });
+
+      addAccountDialogEl.addEventListener("click", (event) => {
+        if (event.target === addAccountDialogEl) {
+          addAccountDialogEl.close();
+          resetAddAccountDialog();
+        }
+      });
+
+      // Method selection
+      document.getElementById("methodBrowser").addEventListener("click", () => {
+        showStep("stepBrowser");
+      });
+
+      document.getElementById("methodDevice").addEventListener("click", () => {
+        showStep("stepDevice");
+        startDeviceCountdown();
+      });
+
+      document.getElementById("methodImport").addEventListener("click", () => {
+        showStep("stepImport");
+      });
+
+      // Import flow
+      const fileDropEl = document.getElementById("fileDrop");
+      const fileInputEl = document.getElementById("fileInput");
+      const fileNameEl = document.getElementById("fileName");
+      const importSubmitEl = document.getElementById("importSubmit");
+
+      fileDropEl.addEventListener("click", () => fileInputEl.click());
+
+      fileDropEl.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        fileDropEl.classList.add("dragover");
+      });
+
+      fileDropEl.addEventListener("dragleave", () => {
+        fileDropEl.classList.remove("dragover");
+      });
+
+      fileDropEl.addEventListener("drop", (event) => {
+        event.preventDefault();
+        fileDropEl.classList.remove("dragover");
+        const file = event.dataTransfer.files[0];
+        if (file) handleFileSelect(file);
+      });
+
+      fileInputEl.addEventListener("change", () => {
+        if (fileInputEl.files[0]) handleFileSelect(fileInputEl.files[0]);
+      });
+
+      function handleFileSelect(file) {
+        fileNameEl.textContent = file.name;
+        importSubmitEl.disabled = false;
+      }
+
+      importSubmitEl.addEventListener("click", () => {
+        // Simulate import: parse JWT claims, encrypt tokens, upsert account
+        setTimeout(() => {
+          showSuccess("imported.user@openai.com", "plus");
+        }, 600);
+      });
+
+      document.getElementById("importBack").addEventListener("click", () => {
+        showStep("stepMethod");
+      });
+
+      // Browser PKCE flow
+      document.getElementById("openSignIn").addEventListener("click", () => {
+        // In the real app, this opens the auth URL in a browser.
+        // Simulate a successful callback after a delay.
+        simulateBrowserAuth();
+      });
+
+      document.getElementById("submitManualCallback").addEventListener("click", () => {
+        const url = document.getElementById("manualCallback").value.trim();
+        if (url) simulateBrowserAuth();
+      });
+
+      document.getElementById("copyAuthUrl").addEventListener("click", () => {
+        const btn = document.getElementById("copyAuthUrl");
+        btn.textContent = "Copied";
+        setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+      });
+
+      document.getElementById("browserCancel").addEventListener("click", () => {
+        showStep("stepMethod");
+      });
+
+      function simulateBrowserAuth() {
+        // Simulates: PKCE auth → token exchange → JWT decode → account upsert
+        setTimeout(() => {
+          showSuccess("alice@example.com", "enterprise");
+        }, 1500);
+      }
+
+      // Device code flow
+      function startDeviceCountdown() {
+        // Generate a simulated user code
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * 26)]).join("") +
+          "-" +
+          Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * 26)]).join("");
+        document.getElementById("deviceUserCode").textContent = code;
+
+        let remaining = 900; // 15 minutes
+        const countdownEl = document.getElementById("deviceCountdown");
+        updateCountdown();
+
+        if (deviceCountdownTimer) clearInterval(deviceCountdownTimer);
+        deviceCountdownTimer = setInterval(() => {
+          remaining--;
+          if (remaining <= 0) {
+            clearInterval(deviceCountdownTimer);
+            deviceCountdownTimer = null;
+            showError("Device code expired. Please try again.");
+            return;
+          }
+          updateCountdown();
+        }, 1000);
+
+        function updateCountdown() {
+          const min = Math.floor(remaining / 60);
+          const sec = remaining % 60;
+          countdownEl.textContent = `Expires in ${min}:${String(sec).padStart(2, "0")}`;
+        }
+
+        // Simulate successful poll after a short delay
+        setTimeout(() => {
+          if (deviceCountdownTimer) {
+            clearInterval(deviceCountdownTimer);
+            deviceCountdownTimer = null;
+            showSuccess("device.user@example.com", "plus");
+          }
+        }, 4000);
+      }
+
+      document.getElementById("openDeviceLink").addEventListener("click", () => {
+        // In the real app, opens verification URL in browser
+      });
+
+      document.getElementById("copyDeviceUrl").addEventListener("click", () => {
+        const btn = document.getElementById("copyDeviceUrl");
+        btn.textContent = "Copied";
+        setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+      });
+
+      document.getElementById("deviceCancel").addEventListener("click", () => {
+        if (deviceCountdownTimer) {
+          clearInterval(deviceCountdownTimer);
+          deviceCountdownTimer = null;
+        }
+        showStep("stepMethod");
+      });
+
+      // Success / Error
+      function showSuccess(email, plan) {
+        document.getElementById("successEmail").textContent = email;
+        document.getElementById("successPlan").textContent = plan;
+        showStep("stepSuccess");
+      }
+
+      function showError(message) {
+        document.getElementById("errorMessage").textContent = message;
+        showStep("stepError");
+      }
+
+      document.getElementById("successDone").addEventListener("click", () => {
+        addAccountDialogEl.close();
+        resetAddAccountDialog();
+      });
+
+      document.getElementById("errorRetry").addEventListener("click", () => {
+        showStep("stepMethod");
+      });
+
+      document.getElementById("errorClose").addEventListener("click", () => {
+        addAccountDialogEl.close();
+        resetAddAccountDialog();
+      });
+
+      // Close inspector
+      document.getElementById("closeInspector").addEventListener("click", () => {
+        inspectorOpen = false;
+        renderAll();
+      });
+
+      // Close dialogs on backdrop click
+      [backendDialogEl, authDialogEl, addAccountDialogEl].forEach((dialog) => {
+        dialog.addEventListener("click", (event) => {
+          if (event.target === dialog) {
+            dialog.close();
+          }
+        });
+      });
+
+      renderAll();
+
+      // ── Page switching ──
+
+      let currentPage = "router";
+
+      function switchPage(pageId) {
+        currentPage = pageId;
+        document.querySelectorAll(".page").forEach((el) => {
+          el.classList.toggle("active", el.dataset.page === pageId);
+        });
+        document.querySelectorAll(".nav-item[data-page]").forEach((el) => {
+          el.classList.toggle("active", el.dataset.page === pageId);
+        });
+        // Show/hide router toolbar
+        document.querySelector(".tool-strip").style.display = pageId === "router" ? "" : "none";
+
+        if (pageId === "accounts") renderAccountsPage();
+        if (pageId === "sessions") renderSessionsPage();
+        if (pageId === "logs") renderLogsPage();
+      }
+
+      document.querySelectorAll(".nav-item[data-page]").forEach((btn) => {
+        btn.addEventListener("click", () => switchPage(btn.dataset.page));
+      });
+
+      // Also wire the "+ Add" button on accounts page
+      document.getElementById("openAddAccount2").addEventListener("click", () => {
+        resetAddAccountDialog();
+        addAccountDialogEl.showModal();
+      });
+
+      // ── Accounts page ──
+
+      let selectedAccountDetail = null;
+
+      const accountsListFullEl = document.getElementById("accountsListFull");
+      const accountDetailBodyEl = document.getElementById("accountDetailBody");
+      const accountDetailNameEl = document.getElementById("accountDetailName");
+      const accountDetailIdEl = document.getElementById("accountDetailId");
+      const accountEmptyEl = document.getElementById("accountEmptyState");
+      const accountSearchEl = document.getElementById("accountSearch");
+      const accountStatusFilterEl = document.getElementById("accountStatusFilter");
+
+      function renderAccountsPage() {
+        const query = (accountSearchEl.value || "").trim().toLowerCase();
+        const statusFilter = accountStatusFilterEl.value;
+
+        const filtered = accounts.filter((a) => {
+          if (statusFilter && a.state !== statusFilter) return false;
+          if (query && !a.name.toLowerCase().includes(query) && !a.id.toLowerCase().includes(query)) return false;
+          return true;
+        });
+
+        accountsListFullEl.innerHTML = "";
+        filtered.forEach((account) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `account-item${account.id === selectedAccountDetail ? " active" : ""}`;
+          const stateLabel = account.state === "active" ? "" :
+            ` <span class="status-badge ${account.state === "paused" ? "warn" : "err"}">${account.state.replace("_", " ")}</span>`;
+          btn.innerHTML = `
+            <div class="account-top">
+              <span class="account-name">${account.name}</span>
+              <span class="account-plan">${account.plan}${stateLabel}</span>
+            </div>
+            <div class="account-meta-row">
+              <span class="account-meta">Load <strong>${account.load}%</strong></span>
+              <span class="account-meta">Latency <strong>${account.latency} ms</strong></span>
+            </div>
+          `;
+          btn.addEventListener("click", () => {
+            selectedAccountDetail = account.id;
+            renderAccountsPage();
+          });
+          accountsListFullEl.appendChild(btn);
+        });
+
+        if (filtered.length === 0) {
+          accountsListFullEl.innerHTML = `<div class="empty-detail"><span>No matching accounts</span></div>`;
+        }
+
+        renderAccountDetail();
+      }
+
+      function generateSparkline(currentPct) {
+        // Generate 7 bars representing daily usage, ending at current
+        const bars = [];
+        for (let i = 0; i < 7; i++) {
+          const base = currentPct * 0.4 + Math.random() * currentPct * 0.6;
+          const pct = i === 6 ? currentPct : Math.min(100, Math.max(5, base));
+          bars.push(`<div class="spark-bar" style="height:${Math.max(2, pct * 0.24)}px"></div>`);
+        }
+        return bars.join("");
+      }
+
+      function renderAccountDetail() {
+        const account = accounts.find((a) => a.id === selectedAccountDetail);
+        if (!account) {
+          accountDetailNameEl.textContent = "Select an account";
+          accountDetailIdEl.textContent = "";
+          accountDetailBodyEl.innerHTML = `<div class="empty-detail"><strong>Select an account</strong><span>Choose an account from the list to view details</span></div>`;
+          return;
+        }
+
+        accountDetailNameEl.textContent = account.name;
+        accountDetailIdEl.textContent = account.id;
+
+        const primaryPct = 100 - account.quotaPrimary;
+        const secondaryPct = 100 - account.quotaSecondary;
+        const primaryClass = primaryPct > 70 ? "" : primaryPct > 30 ? " warn" : " danger";
+        const secondaryClass = secondaryPct > 70 ? "" : secondaryPct > 30 ? " warn" : " danger";
+
+        const tokenAge = Math.floor(Math.random() * 50) + 10;
+        const tokenStatus = tokenAge < 30 ? "token-ok" : tokenAge < 55 ? "token-warn" : "token-expired";
+        const tokenLabel = tokenAge < 30 ? "valid" : tokenAge < 55 ? `expires in ${60 - tokenAge}m` : "expired";
+
+        const isPaused = account.state === "paused";
+        const isDeactivated = account.state === "deactivated";
+
+        accountDetailBodyEl.innerHTML = `
+          <div class="detail-card">
+            <h4>Usage</h4>
+            <div class="usage-bar-row">
+              <div class="usage-label-row">
+                <span>5h remaining</span>
+                <span>${primaryPct}%</span>
+              </div>
+              <div class="usage-bar"><div class="usage-fill${primaryClass}" style="width:${primaryPct}%"></div></div>
+              <span class="usage-reset">Resets in ${Math.floor(Math.random() * 4) + 1}h ${Math.floor(Math.random() * 59)}m</span>
+            </div>
+            <div class="usage-bar-row">
+              <div class="usage-label-row">
+                <span>Weekly remaining</span>
+                <span>${secondaryPct}%</span>
+              </div>
+              <div class="usage-bar"><div class="usage-fill${secondaryClass}" style="width:${secondaryPct}%"></div></div>
+              <span class="usage-reset">Resets in ${Math.floor(Math.random() * 6) + 1}d</span>
+            </div>
+          </div>
+
+          <div class="detail-card">
+            <h4>7-day usage trend</h4>
+            <div class="trend-row">
+              <span class="trend-label">5h</span>
+              <div class="sparkline">${generateSparkline(account.quotaPrimary)}</div>
+            </div>
+            <div class="trend-row">
+              <span class="trend-label">Weekly</span>
+              <div class="sparkline">${generateSparkline(account.quotaSecondary)}</div>
+            </div>
+          </div>
+
+          <div class="detail-card">
+            <h4>Request usage</h4>
+            <div class="request-stats">
+              <div class="request-stat"><span>Requests</span>${formatNumber(account.routed24h)}</div>
+              <div class="request-stat"><span>Tokens</span>${formatNumber(account.routed24h * 1240)}</div>
+              <div class="request-stat"><span>Cost</span>$${(account.routed24h * 0.0032).toFixed(2)}</div>
+              <div class="request-stat"><span>Failovers</span>${account.failovers}</div>
+            </div>
+          </div>
+
+          <div class="detail-card">
+            <h4>Token status</h4>
+            <dl class="token-grid">
+              <dt>Access</dt><dd class="${tokenStatus}">${tokenLabel}</dd>
+              <dt>Refresh</dt><dd class="token-ok">valid</dd>
+              <dt>ID token</dt><dd class="token-ok">present</dd>
+            </dl>
+          </div>
+
+          <div class="account-actions">
+            ${isPaused ? `<button class="dock-btn accent" type="button">Resume</button>` : `<button class="dock-btn" type="button">Pause</button>`}
+            ${isDeactivated ? `<button class="dock-btn" type="button">Re-authenticate</button>` : ""}
+            <button class="btn-danger" type="button">Delete</button>
+          </div>
+        `;
+      }
+
+      accountSearchEl.addEventListener("input", () => renderAccountsPage());
+      accountStatusFilterEl.addEventListener("change", () => renderAccountsPage());
+
+      // ── Sessions page ──
+
+      const stickySessionsData = [
+        // codex_session: from x-codex-turn-state or session_id headers — durable, no expiry
+        { key: "turn_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4", kind: "codex_session", accountId: "acc-alice", updated: "2026-03-27 09:14:22", expiry: null, stale: false },
+        { key: "http_turn_f7e8d9c0b1a2f7e8d9c0b1a2f7e8d9c0", kind: "codex_session", accountId: "acc-research", updated: "2026-03-27 09:12:05", expiry: null, stale: false },
+        { key: "turn_1122334455aa1122334455aa1122334455", kind: "codex_session", accountId: "acc-night", updated: "2026-03-27 08:30:18", expiry: null, stale: false },
+        { key: "codex-thread-7f2a9c", kind: "codex_session", accountId: "acc-research", updated: "2026-03-27 07:44:33", expiry: null, stale: false },
+        // sticky_thread: derived from api_key + instructions + input hashes — TTL 1800s
+        { key: "ak_e4f1b290c3-8a2c17df09b1-5e3f0a912c4d", kind: "sticky_thread", accountId: "acc-alice", updated: "2026-03-27 09:10:44", expiry: "2026-03-27 09:40:44", stale: false },
+        { key: "ak_91c0d7f2a3-bb410ef73c22-d1a9c083e45f", kind: "sticky_thread", accountId: "acc-night", updated: "2026-03-27 08:55:31", expiry: "2026-03-27 09:25:31", stale: false },
+        { key: "ak_7b3ea102f4-ce590a1d82f3-a02e5f831c97", kind: "sticky_thread", accountId: "acc-overflow", updated: "2026-03-27 09:02:11", expiry: "2026-03-27 09:32:11", stale: false },
+        // prompt_cache: derived hash or client-provided prompt_cache_key — TTL 1800s
+        { key: "ak_e4f1b290c3-3f8a22c1b0e7-901ad4f7c2b8", kind: "prompt_cache", accountId: "acc-alice", updated: "2026-03-27 08:48:10", expiry: "2026-03-27 09:18:10", stale: false },
+        { key: "ak_91c0d7f2a3-a94e08b1c3f5-7720de31fa09", kind: "prompt_cache", accountId: "acc-research", updated: "2026-03-27 07:22:09", expiry: "2026-03-27 07:52:09", stale: true },
+        { key: "ak_4c1de90a28-ff21b83a09c4-3e17a0d9b8f2", kind: "prompt_cache", accountId: "acc-overflow", updated: "2026-03-26 23:15:00", expiry: "2026-03-26 23:45:00", stale: true },
+        { key: "ak_7b3ea102f4-110ca9f38e2d-b84f21e0c537", kind: "prompt_cache", accountId: "acc-night", updated: "2026-03-27 09:08:55", expiry: "2026-03-27 09:38:55", stale: false },
+        { key: "ak_e4f1b290c3-d5c02fa819e3-44b1e7093c28", kind: "prompt_cache", accountId: "acc-alice", updated: "2026-03-26 22:10:00", expiry: "2026-03-26 22:40:00", stale: true },
+      ];
+
+      let sessionsKindFilter = "all";
+      let sessionsOffset = 0;
+      const sessionsLimit = 10;
+
+      function renderSessionsPage() {
+        const filtered = sessionsKindFilter === "all"
+          ? stickySessionsData
+          : stickySessionsData.filter((s) => s.kind === sessionsKindFilter);
+
+        const staleTotal = stickySessionsData.filter((s) => s.stale).length;
+        document.getElementById("sessionsCount").textContent = filtered.length;
+        document.getElementById("staleCount").textContent = staleTotal;
+
+        const paged = filtered.slice(sessionsOffset, sessionsOffset + sessionsLimit);
+        const tbody = document.getElementById("sessionsRows");
+        tbody.innerHTML = "";
+
+        if (paged.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No sticky sessions match the current filter.</td></tr>`;
+        } else {
+          paged.forEach((session) => {
+            const account = accounts.find((a) => a.id === session.accountId);
+            const accountName = account ? account.name : session.accountId;
+            const kindLabels = { codex_session: "Codex session", sticky_thread: "Sticky thread", prompt_cache: "Prompt cache" };
+            const kindClass = session.kind.replace("_", "-");
+
+            let expiryCell;
+            if (session.stale) {
+              expiryCell = `${session.expiry}<span class="stale-badge">Stale</span>`;
+            } else if (session.expiry) {
+              expiryCell = session.expiry;
+            } else {
+              expiryCell = `<span class="durable-label">Durable</span>`;
+            }
+
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td class="mono" style="font-size:11px; max-width:16rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="${session.key}">${session.key}</td>
+              <td><span class="kind-badge ${kindClass}">${kindLabels[session.kind]}</span></td>
+              <td style="font-size:12px">${accountName}</td>
+              <td style="font-size:12px; color:var(--text-secondary)">${session.updated}</td>
+              <td style="font-size:12px; color:var(--text-secondary)">${expiryCell}</td>
+              <td style="text-align:right"><button class="btn-danger" style="font-size:11px; padding:0.15rem 0.4rem" type="button">Remove</button></td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+
+        // Pagination
+        const total = filtered.length;
+        const start = Math.min(sessionsOffset + 1, total);
+        const end = Math.min(sessionsOffset + sessionsLimit, total);
+        document.getElementById("sessionsPaginationLabel").textContent = total > 0 ? `${start}–${end} of ${total}` : "0 results";
+        document.getElementById("sessionsPrev").disabled = sessionsOffset === 0;
+        document.getElementById("sessionsNext").disabled = sessionsOffset + sessionsLimit >= total;
+
+        // Filter buttons active state
+        document.querySelectorAll(".sessions-filter .filter-btn").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.kind === sessionsKindFilter);
+        });
+      }
+
+      document.querySelectorAll(".sessions-filter .filter-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          sessionsKindFilter = btn.dataset.kind;
+          sessionsOffset = 0;
+          renderSessionsPage();
+        });
+      });
+
+      document.getElementById("sessionsPrev").addEventListener("click", () => {
+        sessionsOffset = Math.max(0, sessionsOffset - sessionsLimit);
+        renderSessionsPage();
+      });
+
+      document.getElementById("sessionsNext").addEventListener("click", () => {
+        sessionsOffset += sessionsLimit;
+        renderSessionsPage();
+      });
+
+      document.getElementById("purgeStaleSessions").addEventListener("click", () => {
+        // Simulate purge
+        for (let i = stickySessionsData.length - 1; i >= 0; i--) {
+          if (stickySessionsData[i].stale) stickySessionsData.splice(i, 1);
+        }
+        renderSessionsPage();
+      });
+
+      // ── Logs page ──
+
+      function renderLogsPage() {
+        const tbody = document.getElementById("logsRows");
+        tbody.innerHTML = "";
+        rows.forEach((row) => {
+          const accountName = accounts.find((a) => a.id === row.accountId)?.name || row.accountId;
+          const tr = document.createElement("tr");
+          tr.className = "route-row";
+          tr.style.cursor = "pointer";
+          tr.innerHTML = `
+            <td>${row.time}</td>
+            <td class="mono">${row.id}</td>
+            <td>${row.protocol}</td>
+            <td class="model-cell">${row.model}</td>
+            <td class="account-cell">${accountName}</td>
+            <td>${formatNumber(row.tokens)}</td>
+            <td>${row.latency} ms</td>
+            <td><span class="status-badge ${statusClass(row.status)}">${row.status}</span></td>
+          `;
+          tr.addEventListener("click", () => openRequestDrawer(row));
+          tbody.appendChild(tr);
+        });
+      }
+
+      // ── Request detail drawer ──
+
+      const logDrawerEl = document.getElementById("logDrawer");
+      const drawerBackdropEl = document.getElementById("drawerBackdrop");
+      const drawerBodyEl = document.getElementById("drawerBody");
+      const drawerTitleEl = document.getElementById("drawerTitle");
+
+      function closeDrawer() {
+        logDrawerEl.classList.remove("open");
+        drawerBackdropEl.classList.remove("open");
+      }
+
+      document.getElementById("closeDrawer").addEventListener("click", closeDrawer);
+      drawerBackdropEl.addEventListener("click", closeDrawer);
+
+      function openRequestDrawer(row) {
+        const account = accounts.find((a) => a.id === row.accountId) || accounts[0];
+        const accountName = account.name;
+        drawerTitleEl.textContent = row.id;
+
+        // Simulate scoring: compute score for all eligible accounts for this request
+        const metrics = deriveMetrics();
+        const eligible = accounts.filter((a) => !hardBlockedStates.has(a.state));
+        const scored = eligible.map((a) => {
+          const m = metrics.get(a.id);
+          return {
+            name: a.name,
+            score: m && Number.isFinite(m.score) ? m.score : Infinity,
+            picked: a.id === row.accountId,
+          };
+        }).sort((a, b) => a.score - b.score);
+
+        // Simulate retry chain
+        const hasRetry = row.status === "warn" || Math.random() > 0.7;
+        let retryHtml = "";
+        if (hasRetry) {
+          const failAccount = accounts.find((a) => a.id !== row.accountId) || account;
+          retryHtml = `
+            <div class="drawer-section">
+              <div class="drawer-section-header">Retry chain</div>
+              <div class="retry-chain">
+                <div class="retry-step">
+                  <span class="retry-dot fail"></span>
+                  <span>${failAccount.name}</span>
+                  <span style="color:var(--text-tertiary); font-size:11px; margin-left:auto">429 rate_limited · ${Math.floor(Math.random() * 200 + 50)} ms</span>
+                </div>
+                <div class="retry-step">
+                  <span class="retry-dot ok"></span>
+                  <span>${accountName}</span>
+                  <span style="color:var(--text-tertiary); font-size:11px; margin-left:auto">200 ok · ${row.latency} ms</span>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        drawerBodyEl.innerHTML = `
+          <div class="drawer-section">
+            <div class="drawer-section-header">Request</div>
+            <dl class="drawer-kv">
+              <dt>ID</dt><dd>${row.id}</dd>
+              <dt>Time</dt><dd>${row.time}</dd>
+              <dt>Protocol</dt><dd>${row.protocol}</dd>
+              <dt>Model</dt><dd>${row.model}</dd>
+              <dt>Account</dt><dd>${accountName}</dd>
+              <dt>Tokens</dt><dd>${formatNumber(row.tokens)}</dd>
+              <dt>Latency</dt><dd>${row.latency} ms</dd>
+              <dt>Status</dt><dd><span class="status-badge ${statusClass(row.status)}">${row.status}</span></dd>
+              ${row.sessionId ? `<dt>Session</dt><dd>${row.sessionId}</dd>` : ""}
+            </dl>
+          </div>
+
+          <div class="drawer-section">
+            <div class="drawer-section-header">Routing decision</div>
+            <table class="scoring-table">
+              <thead><tr><th>Account</th><th>Score</th></tr></thead>
+              <tbody>
+                ${scored.map((s) => `
+                  <tr class="${s.picked ? "picked" : ""}">
+                    <td>${s.name}${s.picked ? " ←" : ""}</td>
+                    <td style="font-family:'SF Mono',ui-monospace,monospace; font-size:11px">${Number.isFinite(s.score) ? s.score.toFixed(4) : "∞"}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+
+          ${retryHtml}
+
+          <div class="drawer-section">
+            <div class="drawer-section-header">Timing</div>
+            <dl class="drawer-kv">
+              <dt>Queue wait</dt><dd>${Math.floor(Math.random() * 15)} ms</dd>
+              <dt>Upstream TTFB</dt><dd>${Math.floor(row.latency * 0.6)} ms</dd>
+              <dt>Stream duration</dt><dd>${row.latency} ms</dd>
+              <dt>Total</dt><dd>${row.latency + Math.floor(Math.random() * 15)} ms</dd>
+            </dl>
+          </div>
+        `;
+
+        logDrawerEl.classList.add("open");
+        drawerBackdropEl.classList.add("open");
+      }
+
+      // ── Settings page ──
+
+      // Theme switching
+      const themeSelectEl = document.getElementById("settingTheme");
+      function applyTheme(theme) {
+        if (theme === "auto") {
+          const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.setAttribute("data-theme", prefersDark ? "dark" : "light");
+        } else {
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+      }
+      themeSelectEl.addEventListener("change", () => applyTheme(themeSelectEl.value));
+      applyTheme(themeSelectEl.value);
+
+      // Toggle buttons
+      document.querySelectorAll(".setting-toggle").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          btn.classList.toggle("on");
+        });
+      });
+
+      const weightLabels = {
+        alpha: "α queue",
+        beta: "β latency",
+        gamma: "γ error",
+        delta: "δ headroom",
+        zeta: "ζ cost",
+        eta: "η cooldown",
+      };
+
+      const strategySelectEl = document.getElementById("settingStrategy");
+
+      // Populate dropdown once
+      routingModes.forEach((mode) => {
+        const opt = document.createElement("option");
+        opt.value = mode.id;
+        opt.textContent = mode.label;
+        if (mode.id === routingMode) opt.selected = true;
+        strategySelectEl.appendChild(opt);
+      });
+
+      strategySelectEl.addEventListener("change", () => {
+        routingMode = strategySelectEl.value;
+        renderStrategyDetail();
+        renderAll();
+      });
+
+      function updateSliderFill(slider) {
+        const pct = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
+        slider.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--surface-1) ${pct}%, var(--surface-1) 100%)`;
+      }
+
+      function renderStrategyDetail() {
+        const detailEl = document.getElementById("strategyDetail");
+        const paramsEl = document.getElementById("compositeParams");
+        const mode = routingModes.find((m) => m.id === routingMode);
+        if (!mode) return;
+
+        let paramHtml = "";
+        if (mode.params) {
+          paramHtml = Object.entries(mode.params).map(([key, val]) => `
+            <div class="strategy-param-row">
+              <label>${key === "rho" ? "ρ (exponent)" : key}</label>
+              <input type="number" value="${val}" min="0.1" max="10" step="0.1" data-strategy-param="${mode.id}:${key}" />
+            </div>
+          `).join("");
+        }
+
+        detailEl.innerHTML = `
+          <div style="padding:0.45rem 0.6rem; border-bottom:1px solid var(--border)">
+            <span class="strategy-desc">${mode.desc}</span>
+            <div class="strategy-formula">${mode.formula}</div>
+            ${paramHtml}
+          </div>
+        `;
+
+        // Strategy-specific param listeners
+        detailEl.querySelectorAll("[data-strategy-param]").forEach((input) => {
+          input.addEventListener("change", () => {
+            const [modeId, key] = input.dataset.strategyParam.split(":");
+            const m = routingModes.find((x) => x.id === modeId);
+            if (m && m.params) {
+              m.params[key] = Number(input.value);
+              renderAll();
+            }
+          });
+        });
+
+        // Composite weights
+        if (mode.usesComposite) {
+          paramsEl.innerHTML = `
+            <div class="composite-weights">
+              <h4>Composite score weights</h4>
+              <div class="composite-formula">S(a,r) = α·q + β·l + γ·e + δ·(1−h) + ζ·cost + η·c</div>
+              <div class="weight-grid" style="margin-top:0.35rem">
+                ${Object.entries(weightLabels).map(([key, label]) => `
+                  <div class="weight-item">
+                    <label>${label}</label>
+                    <input type="range" min="0" max="1" step="0.01" value="${scoringModel[key]}" data-setting-weight="${key}" />
+                    <strong>${scoringModel[key].toFixed(2)}</strong>
+                  </div>
+                `).join("")}
+              </div>
+              <div class="headroom-weights">
+                <label>w_p</label>
+                <input type="number" value="${scoringModel.wp}" min="0" max="1" step="0.05" data-headroom="wp" />
+                <label>w_s</label>
+                <input type="number" value="${scoringModel.ws}" min="0" max="1" step="0.05" data-headroom="ws" />
+                <span style="font-size:10.5px; color:var(--text-tertiary)">h(a) = 1 − (w_p·u_p + w_s·u_s)</span>
+              </div>
+            </div>
+          `;
+
+          paramsEl.querySelectorAll("[data-setting-weight]").forEach((slider) => {
+            updateSliderFill(slider);
+            slider.addEventListener("input", () => {
+              scoringModel[slider.dataset.settingWeight] = Number(slider.value);
+              updateSliderFill(slider);
+              // Update the value display without re-rendering the DOM
+              const strong = slider.parentElement.querySelector("strong");
+              if (strong) strong.textContent = Number(slider.value).toFixed(2);
+              renderAll();
+            });
+          });
+
+          paramsEl.querySelectorAll("[data-headroom]").forEach((input) => {
+            input.addEventListener("change", () => {
+              scoringModel[input.dataset.headroom] = Number(input.value);
+              renderAll();
+            });
+          });
+        } else {
+          paramsEl.innerHTML = "";
+        }
+      }
+
+      renderStrategyDetail();
+    </script>
+  </body>
+</html>

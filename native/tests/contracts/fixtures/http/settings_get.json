@@ -1,0 +1,15 @@
+{
+  "fixture_id": "settings_get",
+  "source": "codex-lb-source-contracts",
+  "request": {
+    "method": "GET",
+    "path": "/api/settings",
+    "auth_mode": "dashboard_session"
+  },
+  "response_contract": {
+    "success_status": 200,
+    "unauthorized_status": 401,
+    "response_model": "DashboardSettingsResponse",
+    "body_keys": ["sticky_threads_enabled","upstream_stream_transport","prefer_earlier_reset_accounts","routing_strategy","openai_cache_affinity_max_age_seconds","import_without_overwrite","totp_required_on_login","totp_configured","api_key_auth_enabled"]
+  }
+}

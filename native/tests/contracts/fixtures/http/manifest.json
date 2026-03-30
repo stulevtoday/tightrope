@@ -1,0 +1,62 @@
+{
+  "format_version": 2,
+  "capture_mode": "source-derived-from-codex-lb",
+  "source_repo": "/Users/fabian/Development/codex-lb",
+  "fixtures": {
+    "dashboard_overview_get": {
+      "method": "GET",
+      "path": "/api/dashboard/overview",
+      "auth_mode": "dashboard_session",
+      "fixture_path": "dashboard_overview_get.json",
+      "response_model": "DashboardOverviewResponse"
+    },
+    "health": {
+      "method": "GET",
+      "path": "/health",
+      "auth_mode": "none",
+      "fixture_path": "health.json",
+      "response_model": "HealthResponse"
+    },
+    "models_get": {
+      "method": "GET",
+      "path": "/api/models",
+      "auth_mode": "dashboard_session",
+      "fixture_path": "models_get.json"
+    },
+    "request_logs_options_get": {
+      "method": "GET",
+      "path": "/api/request-logs/options",
+      "auth_mode": "dashboard_session",
+      "fixture_path": "request_logs_options_get.json",
+      "response_model": "RequestLogFilterOptionsResponse"
+    },
+    "responses_post": {
+      "method": "POST",
+      "path": "/v1/responses",
+      "auth_mode": "proxy_api_key",
+      "fixture_path": "responses_post.json",
+      "response_model": "OpenAIResponseResult"
+    },
+    "settings_get": {
+      "method": "GET",
+      "path": "/api/settings",
+      "auth_mode": "dashboard_session",
+      "fixture_path": "settings_get.json",
+      "response_model": "DashboardSettingsResponse"
+    },
+    "settings_runtime_connect_address_get": {
+      "method": "GET",
+      "path": "/api/settings/runtime/connect-address",
+      "auth_mode": "dashboard_session",
+      "fixture_path": "settings_runtime_connect_address_get.json",
+      "response_model": "RuntimeConnectAddressResponse"
+    },
+    "v1_models_get": {
+      "method": "GET",
+      "path": "/v1/models",
+      "auth_mode": "proxy_api_key",
+      "fixture_path": "v1_models_get.json",
+      "response_model": "ModelListResponse"
+    }
+  }
+}

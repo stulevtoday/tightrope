@@ -1,0 +1,58 @@
+{
+  "name": "tightrope",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main/index.js",
+  "build": {
+    "appId": "com.tightrope.desktop",
+    "protocols": [
+      {
+        "name": "Tightrope Deep Link",
+        "schemes": [
+          "tightrope"
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "predev": "npm run build:native",
+    "dev": "concurrently -k \"npm:dev:main\" \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:main": "tsc -p tsconfig.main.json --watch",
+    "dev:renderer": "vite --host 127.0.0.1 --port 5173",
+    "dev:electron": "wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build": "npm run build:main && npm run build:renderer && electron-builder",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:ui": "playwright test",
+    "test": "npm run test:unit && npm run test:ui",
+    "build:native": "cmake-js rebuild -d .. -r electron -v $(node -p \"require('./node_modules/electron/package.json').version\") --CDVCPKG_TARGET_TRIPLET=arm64-osx-static --CDVCPKG_OVERLAY_TRIPLETS=../triplets --CDCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake"
+  },
+  "dependencies": {
+    "lucide-react": "^0.547.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "node-addon-api": "^7.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.2.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^5.0.1",
+    "cmake-js": "^7.0.0",
+    "concurrently": "^9.1.2",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.2.7",
+    "vitest": "^3.2.4",
+    "wait-on": "^8.0.3"
+  }
+}

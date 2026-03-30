@@ -1,0 +1,15 @@
+{
+  "fixture_id": "v1_models_get",
+  "source": "codex-lb-source-contracts",
+  "request": {
+    "method": "GET",
+    "path": "/v1/models",
+    "auth_mode": "proxy_api_key"
+  },
+  "response_contract": {
+    "success_status": 200,
+    "unauthorized_status": 401,
+    "response_model": "ModelListResponse",
+    "body_keys": ["object","data"]
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "tightrope-core",
+  "version-semver": "0.1.0",
+  "builtin-baseline": "b5d1a94fb7f88fd835e360fd23a45a09ceedbf48",
+  "dependencies": [
+    "nuraft",
+    "uwebsockets",
+    "mbedtls",
+    "boost-asio",
+    "boost-beast",
+    "boost-log",
+    "boost-uuid",
+    { "name": "sqlite3", "features": ["json1", "fts5"] },
+    "sqlitecpp",
+    "glaze",
+    "lz4",
+    "libsodium",
+    "quill",
+    "tomlplusplus",
+    "libuv",
+    "curl",
+    "catch2"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "fixture_id": "request_logs_options_get",
+  "source": "codex-lb-source-contracts",
+  "request": {
+    "method": "GET",
+    "path": "/api/request-logs/options",
+    "auth_mode": "dashboard_session"
+  },
+  "response_contract": {
+    "success_status": 200,
+    "unauthorized_status": 401,
+    "response_model": "RequestLogFilterOptionsResponse",
+    "body_keys": ["account_ids","model_options","statuses"]
+  }
+}

@@ -1,0 +1,8 @@
+{"seq":1,"contract":"proxy-streaming-v1","transport":"sse","route":"/backend-api/codex/responses","flow_id":"backend_success","event_type":"response.created","terminal":false}
+{"seq":2,"contract":"proxy-streaming-v1","transport":"sse","route":"/backend-api/codex/responses","flow_id":"backend_success","event_type":"response.output_text.delta","terminal":false}
+{"seq":3,"contract":"proxy-streaming-v1","transport":"sse","route":"/backend-api/codex/responses","flow_id":"backend_success","event_type":"response.completed","terminal":true}
+{"seq":4,"contract":"proxy-streaming-v1","transport":"sse","route":"/v1/responses","flow_id":"v1_success","event_type":"response.created","terminal":false}
+{"seq":5,"contract":"proxy-streaming-v1","transport":"sse","route":"/v1/responses","flow_id":"v1_success","event_type":"response.output_text.delta","terminal":false}
+{"seq":6,"contract":"proxy-streaming-v1","transport":"sse","route":"/v1/responses","flow_id":"v1_success","event_type":"response.completed","terminal":true}
+{"seq":7,"contract":"proxy-streaming-v1","transport":"sse","route":"/backend-api/codex/responses","flow_id":"backend_idle_timeout","event_type":"response.created","terminal":false}
+{"seq":8,"contract":"proxy-streaming-v1","transport":"sse","route":"/backend-api/codex/responses","flow_id":"backend_idle_timeout","event_type":"response.failed","error_code":"stream_idle_timeout","terminal":true}

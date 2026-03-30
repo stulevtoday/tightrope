@@ -1,0 +1,15 @@
+{
+  "fixture_id": "dashboard_overview_get",
+  "source": "codex-lb-source-contracts",
+  "request": {
+    "method": "GET",
+    "path": "/api/dashboard/overview",
+    "auth_mode": "dashboard_session"
+  },
+  "response_contract": {
+    "success_status": 200,
+    "unauthorized_status": 401,
+    "response_model": "DashboardOverviewResponse",
+    "body_keys": ["last_sync_at","accounts","summary","windows","trends","depletion_primary","depletion_secondary"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "fixture_id": "responses_post",
+  "source": "codex-lb-source-contracts",
+  "request": {
+    "method": "POST",
+    "path": "/v1/responses",
+    "auth_mode": "proxy_api_key",
+    "body": {"model":"gpt-5.1","input":"hello","stream":true,"promptCacheKey":"thread_123","promptCacheRetention":"4h","service_tier":"priority","reasoningEffort":"high","reasoningSummary":"auto","textVerbosity":"low","max_output_tokens":32000,"temperature":0.2,"safety_identifier":"safe_123"}
+  },
+  "response_contract": {
+    "success_status": 200,
+    "unauthorized_status": 401,
+    "response_model": "OpenAIResponseResult",
+    "body_keys": ["id","status","error","usage"]
+  }
+}
