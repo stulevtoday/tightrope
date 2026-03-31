@@ -1,12 +1,17 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 
+#include <sqlite3.h>
+
+#include "migration/migration_runner.h"
 #include "oauth/oauth_service.h"
+#include "repositories/request_log_repo.h"
 #include "server.h"
 #include "server/oauth_provider_fake.h"
 #include "server/runtime_test_utils.h"
@@ -62,8 +67,16 @@ TEST_CASE("uwebsockets runtime serves settings endpoints", "[server][runtime][ad
     REQUIRE(db_path_guard.set(db_path));
 
     tightrope::server::Runtime runtime;
-    const auto port = tightrope::tests::server::next_runtime_port();
-    REQUIRE(runtime.start(tightrope::server::RuntimeConfig{.host = "127.0.0.1", .port = port}));
+    std::uint16_t port = 0;
+    bool started = false;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        port = tightrope::tests::server::next_runtime_port();
+        if (runtime.start(tightrope::server::RuntimeConfig{.host = "127.0.0.1", .port = port})) {
+            started = true;
+            break;
+        }
+    }
+    REQUIRE(started);
 
     const auto initial = tightrope::tests::server::send_raw_http(
         port,
@@ -130,8 +143,16 @@ TEST_CASE("uwebsockets runtime serves tightrope oauth routes", "[server][runtime
     tightrope::auth::oauth::reset_oauth_state_for_testing();
 
     tightrope::server::Runtime runtime;
-    const auto port = tightrope::tests::server::next_runtime_port();
-    REQUIRE(runtime.start(tightrope::server::RuntimeConfig{.host = "127.0.0.1", .port = port}));
+    std::uint16_t port = 0;
+    bool started = false;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        port = tightrope::tests::server::next_runtime_port();
+        if (runtime.start(tightrope::server::RuntimeConfig{.host = "127.0.0.1", .port = port})) {
+            started = true;
+            break;
+        }
+    }
+    REQUIRE(started);
 
     const auto status_initial = tightrope::tests::server::send_raw_http(
         port,
@@ -270,8 +291,16 @@ TEST_CASE("uwebsockets runtime serves API keys CRUD endpoints", "[server][runtim
     REQUIRE(db_path_guard.set(db_path));
 
     tightrope::server::Runtime runtime;
-    const auto port = tightrope::tests::server::next_runtime_port();
-    REQUIRE(runtime.start(tightrope::server::RuntimeConfig{.host = "127.0.0.1", .port = port}));
+    std::uint16_t port = 0;
+    bool started = false;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        port = tightrope::tests::server::next_runtime_port();
+        if (runtime.start(tightrope::server::RuntimeConfig{.host = "127.0.0.1", .port = port})) {
+            started = true;
+            break;
+        }
+    }
+    REQUIRE(started);
 
     const std::string create_body =
         R"({"name":"Primary Key","allowedModels":["gpt-5.4"],"enforcedModel":"gpt-5.4","enforcedReasoningEffort":"high"})";
@@ -401,6 +430,50 @@ TEST_CASE("uwebsockets runtime serves account admin endpoints", "[server][runtim
     );
     REQUIRE(deleted.find("200 OK") != std::string::npos);
     REQUIRE(deleted.find("\"status\":\"deleted\"") != std::string::npos);
+
+    REQUIRE(runtime.stop());
+    std::filesystem::remove(db_path);
+}
+
+TEST_CASE("uwebsockets runtime serves request logs endpoint", "[server][runtime][admin][logs]") {
+    tightrope::tests::server::EnvVarGuard db_path_guard{"TIGHTROPE_DB_PATH"};
+    const auto db_path = tightrope::tests::server::make_temp_runtime_db_path();
+    REQUIRE(db_path_guard.set(db_path));
+
+    sqlite3* seed_db = nullptr;
+    REQUIRE(sqlite3_open_v2(db_path.c_str(), &seed_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
+    REQUIRE(seed_db != nullptr);
+    REQUIRE(tightrope::db::run_migrations(seed_db));
+
+    tightrope::db::RequestLogWrite log;
+    log.path = "/backend-api/codex/responses";
+    log.method = "POST";
+    log.status_code = 101;
+    log.transport = "websocket";
+    REQUIRE(tightrope::db::append_request_log(seed_db, log));
+    sqlite3_close(seed_db);
+
+    tightrope::server::Runtime runtime;
+    std::uint16_t port = 0;
+    bool started = false;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        port = tightrope::tests::server::next_runtime_port();
+        if (runtime.start(tightrope::server::RuntimeConfig{.host = "127.0.0.1", .port = port})) {
+            started = true;
+            break;
+        }
+    }
+    REQUIRE(started);
+
+    const auto listed = tightrope::tests::server::send_raw_http(
+        port,
+        "GET /api/logs?limit=50&offset=0 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+    );
+    REQUIRE(listed.find("200 OK") != std::string::npos);
+    REQUIRE(listed.find("\"limit\":50") != std::string::npos);
+    REQUIRE(listed.find("\"offset\":0") != std::string::npos);
+    REQUIRE(listed.find("\"path\":\"/backend-api/codex/responses\"") != std::string::npos);
+    REQUIRE(listed.find("\"transport\":\"websocket\"") != std::string::npos);
 
     REQUIRE(runtime.stop());
     std::filesystem::remove(db_path);

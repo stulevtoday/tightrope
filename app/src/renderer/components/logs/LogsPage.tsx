@@ -38,10 +38,11 @@ export function LogsPage({ visible, rows, accounts, formatNumber, onOpenDrawer }
             <tbody>
               {rows.map((row) => {
                 const accountName = accounts.find((account) => account.id === row.accountId)?.name ?? row.accountId;
+                const requestLabel = row.path ? `${row.method ?? 'POST'} ${row.path}` : row.id;
                 return (
                   <tr key={row.id} className="route-row" style={{ cursor: 'pointer' }} onClick={() => onOpenDrawer(row.id)}>
                     <td>{row.time}</td>
-                    <td className="mono">{row.id}</td>
+                    <td className="mono">{requestLabel}</td>
                     <td>{row.protocol}</td>
                     <td className="model-cell">{row.model}</td>
                     <td className="account-cell">{accountName}</td>

@@ -845,6 +845,46 @@
         overflow-wrap: anywhere;
       }
 
+      .account-top-right {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.32rem;
+        min-width: 0;
+      }
+
+      .traffic-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.08rem;
+        padding: 0.04rem 0.22rem;
+        border: 1px solid rgba(122, 137, 156, 0.22);
+        border-radius: 999px;
+        background: rgba(97, 110, 128, 0.08);
+      }
+
+      .traffic-arrow {
+        font-size: 10px;
+        line-height: 1;
+        opacity: 0.24;
+        color: var(--text-tertiary);
+        transition: color 120ms ease, opacity 120ms ease;
+      }
+
+      .traffic-arrow.up.active {
+        opacity: 0.98;
+        color: #6cbf85;
+      }
+
+      .traffic-arrow.down.active {
+        opacity: 0.98;
+        color: #7ea7ff;
+      }
+
+      .traffic-indicator.active {
+        border-color: rgba(126, 167, 255, 0.25);
+        background: rgba(126, 167, 255, 0.12);
+      }
+
       .account-plan,
       .account-meta,
       .key-label,

@@ -12,7 +12,25 @@ contextBridge.exposeInMainWorld('tightrope', {
   oauthRestart: () => ipcRenderer.invoke('oauth:restart'),
   oauthComplete: (payload: unknown) => ipcRenderer.invoke('oauth:complete', payload),
   oauthManualCallback: (callbackUrl: string) => ipcRenderer.invoke('oauth:manual-callback', callbackUrl),
+  onOauthDeepLink: (listener: (event: { kind: 'success' | 'callback'; url: string }) => void) => {
+    const handler = (_event: unknown, payload: unknown) => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+      const maybeKind = (payload as { kind?: unknown }).kind;
+      const maybeUrl = (payload as { url?: unknown }).url;
+      if ((maybeKind === 'success' || maybeKind === 'callback') && typeof maybeUrl === 'string') {
+        listener({ kind: maybeKind, url: maybeUrl });
+      }
+    };
+    ipcRenderer.on('oauth:deep-link', handler);
+    return () => {
+      ipcRenderer.removeListener('oauth:deep-link', handler);
+    };
+  },
   listAccounts: () => ipcRenderer.invoke('accounts:list'),
+  listRequestLogs: (payload?: { limit?: number; offset?: number }) => ipcRenderer.invoke('logs:list', payload),
+  listAccountTraffic: () => ipcRenderer.invoke('accounts:traffic'),
   importAccount: (payload: unknown) => ipcRenderer.invoke('accounts:import', payload),
   pauseAccount: (accountId: string) => ipcRenderer.invoke('accounts:pause', accountId),
   reactivateAccount: (accountId: string) => ipcRenderer.invoke('accounts:reactivate', accountId),

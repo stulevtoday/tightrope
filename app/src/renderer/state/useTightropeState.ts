@@ -13,9 +13,14 @@ import type {
   FirewallMode,
   ManualCallbackResponse,
   OauthCompleteResponse,
+  OauthDeepLinkEvent,
   OauthStartResponse,
   OauthStatusResponse,
   RuntimeAccount,
+  RuntimeAccountTraffic,
+  RuntimeAccountTrafficResponse,
+  RuntimeRequestLog,
+  RuntimeRequestLogsResponse,
   RouteRow,
   RoutingMode,
   SyncConflictResolution,
@@ -43,6 +48,42 @@ const SESSIONS_LIMIT = 10;
 const DEFAULT_DEVICE_EXPIRES_SECONDS = 900;
 const DEFAULT_OAUTH_CALLBACK_PORT = 1455;
 const BROWSER_OAUTH_POLL_MS = 1000;
+const OAUTH_DEEP_LINK_RETRY_MS = 250;
+const OAUTH_DEEP_LINK_MAX_ATTEMPTS = 12;
+const ACCOUNT_USAGE_REFRESH_RETRY_MS = 750;
+const ACCOUNT_USAGE_REFRESH_MAX_ATTEMPTS = 4;
+const REQUEST_LOGS_LIMIT = 250;
+const REQUEST_LOGS_REFRESH_MS = 1000;
+const TRAFFIC_WS_ENDPOINT = '/api/accounts/traffic/ws';
+const TRAFFIC_WS_HOST = '127.0.0.1:2455';
+const RUNTIME_HTTP_HOST = '127.0.0.1:2455';
+const TRAFFIC_WS_RECONNECT_MS = 1200;
+const TRAFFIC_ACTIVE_WINDOW_MS = 3000;
+const TRAFFIC_CLOCK_TICK_MS = 200;
+const TRAFFIC_SNAPSHOT_POLL_MS = 1000;
+const TRAFFIC_FRAME_VERSION = 1;
+const TRAFFIC_FRAME_BYTES = 50;
+
+interface AccountTrafficFrame {
+  accountId: string;
+  upBytes: number;
+  downBytes: number;
+  lastUpAtMs: number;
+  lastDownAtMs: number;
+}
+
+const EMPTY_ROUTE_ROW: RouteRow = {
+  time: '--:--:--',
+  id: '',
+  model: '—',
+  accountId: '',
+  tokens: 0,
+  latency: 0,
+  status: 'ok',
+  protocol: 'SSE',
+  sessionId: '',
+  sticky: false,
+};
 
 const defaultDashboardSettings: DashboardSettings = {
   theme: 'auto',
@@ -149,6 +190,11 @@ async function getJson<T>(path: string): Promise<T> {
   return parseJsonResponse<T>(response);
 }
 
+function runtimeHttpUrl(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `http://${RUNTIME_HTTP_HOST}${normalized}`;
+}
+
 async function oauthStartRequest(forceMethod: 'browser' | 'device'): Promise<OauthStartResponse> {
   const api = window.tightrope;
   if (api?.oauthStart) {
@@ -204,6 +250,26 @@ async function listAccountsRequest(): Promise<RuntimeAccount[]> {
     return Array.isArray(response.accounts) ? response.accounts : [];
   }
   const response = await getJson<{ accounts?: RuntimeAccount[] }>('/api/accounts');
+  return Array.isArray(response.accounts) ? response.accounts : [];
+}
+
+async function listRequestLogsRequest(limit = REQUEST_LOGS_LIMIT, offset = 0): Promise<RuntimeRequestLog[]> {
+  const api = window.tightrope;
+  if (api?.listRequestLogs) {
+    const response = await api.listRequestLogs({ limit, offset });
+    return Array.isArray(response.logs) ? response.logs : [];
+  }
+  const response = await getJson<RuntimeRequestLogsResponse>(runtimeHttpUrl(`/api/logs?limit=${limit}&offset=${offset}`));
+  return Array.isArray(response.logs) ? response.logs : [];
+}
+
+async function listAccountTrafficRequest(): Promise<RuntimeAccountTraffic[]> {
+  const api = window.tightrope;
+  if (api?.listAccountTraffic) {
+    const response = await api.listAccountTraffic();
+    return Array.isArray(response.accounts) ? response.accounts : [];
+  }
+  const response = await getJson<RuntimeAccountTrafficResponse>(runtimeHttpUrl('/api/accounts/traffic'));
   return Array.isArray(response.accounts) ? response.accounts : [];
 }
 
@@ -264,9 +330,24 @@ function mapAccountState(status: string): AccountState {
   return 'deactivated';
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function mapRuntimePlan(planType: string | null | undefined): Account['plan'] {
   const normalized = typeof planType === 'string' ? planType.trim().toLowerCase() : '';
-  return normalized === 'enterprise' ? 'enterprise' : 'plus';
+  if (normalized.includes('enterprise') || normalized.includes('business') || normalized.includes('team')) {
+    return 'enterprise';
+  }
+  if (normalized.includes('free') || normalized.includes('guest')) {
+    return 'free';
+  }
+  if (normalized.includes('plus') || normalized.includes('pro') || normalized.includes('premium') || normalized.includes('paid')) {
+    return 'plus';
+  }
+  return 'free';
 }
 
 function runtimeNumber(value: unknown): number | null {
@@ -274,6 +355,107 @@ function runtimeNumber(value: unknown): number | null {
     return null;
   }
   return value;
+}
+
+function mapTransportProtocol(value: string | null | undefined): RouteRow['protocol'] {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized === 'websocket' || normalized === 'ws') {
+    return 'WS';
+  }
+  if (normalized === 'compact') {
+    return 'Compact';
+  }
+  if (normalized === 'transcribe') {
+    return 'Transcribe';
+  }
+  return 'SSE';
+}
+
+function mapStatusBadge(statusCode: number, errorCode: string | null | undefined): RouteRow['status'] {
+  if (statusCode >= 500) {
+    return 'error';
+  }
+  if (statusCode >= 400 || (typeof errorCode === 'string' && errorCode.trim() !== '')) {
+    return 'warn';
+  }
+  return 'ok';
+}
+
+function routeTimeLabel(requestedAt: string): string {
+  const trimmed = requestedAt.trim();
+  const date = new Date(trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T') + 'Z');
+  if (!Number.isNaN(date.getTime())) {
+    return date.toTimeString().slice(0, 8);
+  }
+  if (trimmed.length >= 8) {
+    return trimmed.slice(-8);
+  }
+  return nowStamp();
+}
+
+function runtimeRequestLogToRouteRow(log: RuntimeRequestLog): RouteRow {
+  const accountId = typeof log.accountId === 'string' ? log.accountId : '';
+  const statusCode = Number.isFinite(log.statusCode) ? Math.trunc(log.statusCode) : 0;
+  const model = typeof log.model === 'string' && log.model.trim() !== '' ? log.model.trim() : '—';
+  const path = typeof log.path === 'string' ? log.path : '';
+  const method = typeof log.method === 'string' ? log.method : '';
+  const requestedAt = typeof log.requestedAt === 'string' ? log.requestedAt : '';
+  const errorCode = typeof log.errorCode === 'string' ? log.errorCode : null;
+  const transport = typeof log.transport === 'string' ? log.transport : null;
+  const totalCost = Number.isFinite(log.totalCost) ? log.totalCost : 0;
+
+  return {
+    id: `log_${log.id}`,
+    time: routeTimeLabel(requestedAt),
+    model,
+    accountId,
+    tokens: 0,
+    latency: 0,
+    status: mapStatusBadge(statusCode, errorCode),
+    protocol: mapTransportProtocol(transport),
+    sessionId: path,
+    sticky: false,
+    method,
+    path,
+    statusCode,
+    errorCode,
+    requestedAt,
+    totalCost,
+  };
+}
+
+function trafficWsUrl(bindLabel: string | null | undefined): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const trimmedBind = (bindLabel ?? '').trim();
+  const host = /^[A-Za-z0-9._-]+:\d+$/.test(trimmedBind) ? trimmedBind : TRAFFIC_WS_HOST;
+  return `${protocol}//${host}${TRAFFIC_WS_ENDPOINT}`;
+}
+
+function bigintToNumber(value: bigint): number {
+  const max = BigInt(Number.MAX_SAFE_INTEGER);
+  return Number(value > max ? max : value);
+}
+
+function decodeTrafficFrame(data: ArrayBuffer): AccountTrafficFrame | null {
+  if (data.byteLength !== TRAFFIC_FRAME_BYTES) {
+    return null;
+  }
+  const view = new DataView(data);
+  const version = view.getUint8(0);
+  if (version !== TRAFFIC_FRAME_VERSION) {
+    return null;
+  }
+  const accountId = bigintToNumber(view.getBigUint64(10, true)).toString();
+  if (accountId.length === 0) {
+    return null;
+  }
+  return {
+    accountId,
+    upBytes: bigintToNumber(view.getBigUint64(18, true)),
+    downBytes: bigintToNumber(view.getBigUint64(26, true)),
+    lastUpAtMs: bigintToNumber(view.getBigUint64(34, true)),
+    lastDownAtMs: bigintToNumber(view.getBigUint64(42, true)),
+  };
 }
 
 function runtimeAccountToUiAccount(record: RuntimeAccount): Account {
@@ -327,6 +509,10 @@ function runtimeAccountToUiAccount(record: RuntimeAccount): Account {
     failovers: failovers ?? 0,
     note: record.provider || 'openai',
     telemetryBacked,
+    trafficUpBytes: 0,
+    trafficDownBytes: 0,
+    trafficLastUpAtMs: 0,
+    trafficLastDownAtMs: 0,
   };
 }
 
@@ -525,14 +711,23 @@ export function useTightropeState() {
   const [clusterStatus, setClusterStatus] = useState<ClusterStatus>({ ...emptyClusterStatus });
   const [manualPeerAddress, setManualPeerAddress] = useState('');
   const [refreshingAccountTelemetryId, setRefreshingAccountTelemetryId] = useState<string | null>(null);
+  const [trafficClockMs, setTrafficClockMs] = useState<number>(() => Date.now());
   const dashboardSettingsRef = useRef<DashboardSettings>(defaultDashboardSettings);
   const deviceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const deviceSuccessRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const oauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const browserOauthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const oauthStartInFlightRef = useRef<Promise<string | null> | null>(null);
+  const oauthDeepLinkFinalizeInFlightRef = useRef(false);
   const oauthAccountBaselineIdsRef = useRef<Set<string>>(new Set());
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedImportFileRef = useRef<File | null>(null);
+  const trafficWsRef = useRef<WebSocket | null>(null);
+  const trafficReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trafficClockTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingTrafficByAccountRef = useRef<Map<string, AccountTrafficFrame>>(new Map());
+  const requestLogRefreshInFlightRef = useRef(false);
+  const trafficSnapshotRefreshInFlightRef = useRef(false);
 
   const metrics = deriveMetrics(
     accounts,
@@ -543,7 +738,11 @@ export function useTightropeState() {
   );
   const visibleRows = filteredRows(state.rows, accounts, state.selectedAccountId, state.searchQuery);
   const ensuredRouteId = ensureSelectedRouteId(visibleRows, state.selectedRouteId);
-  const routedAccountId = selectRoutedAccountId(accounts, metrics);
+  const selectedRoute = state.rows.find((route) => route.id === ensuredRouteId) ?? state.rows[0] ?? EMPTY_ROUTE_ROW;
+  const routedAccountId =
+    selectedRoute.accountId && accounts.some((account) => account.id === selectedRoute.accountId)
+      ? selectedRoute.accountId
+      : selectRoutedAccountId(accounts, metrics);
   const activeRoutingMode = routingModes.find((mode) => mode.id === state.routingMode) ?? routingModes[0];
   const sessionsView = paginateSessions(state.sessions, state.sessionsKindFilter, state.sessionsOffset, SESSIONS_LIMIT);
   const accountFilterQuery = state.accountSearchQuery.trim().toLowerCase();
@@ -555,7 +754,6 @@ export function useTightropeState() {
   const selectedAccountDetail = accounts.find((account) => account.id === state.selectedAccountDetailId) ?? null;
   const isRefreshingSelectedAccountTelemetry =
     selectedAccountDetail !== null && refreshingAccountTelemetryId === selectedAccountDetail.id;
-  const selectedRoute = state.rows.find((route) => route.id === ensuredRouteId) ?? state.rows[0];
   const canScheduleAutoSync = shouldScheduleAutoSync(clusterStatus, dashboardSettings.syncIntervalSeconds);
 
   useEffect(() => {
@@ -591,6 +789,21 @@ export function useTightropeState() {
     document.documentElement.setAttribute('data-theme', resolvedTheme);
   }, [state.theme]);
 
+  useEffect(() => {
+    if (trafficClockTimerRef.current) {
+      clearInterval(trafficClockTimerRef.current);
+    }
+    trafficClockTimerRef.current = setInterval(() => {
+      setTrafficClockMs(Date.now());
+    }, TRAFFIC_CLOCK_TICK_MS);
+    return () => {
+      if (trafficClockTimerRef.current) {
+        clearInterval(trafficClockTimerRef.current);
+        trafficClockTimerRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(
     () => () => {
       if (deviceTimerRef.current) clearInterval(deviceTimerRef.current);
@@ -598,6 +811,12 @@ export function useTightropeState() {
       if (oauthPollRef.current) clearInterval(oauthPollRef.current);
       if (browserOauthPollRef.current) clearInterval(browserOauthPollRef.current);
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      if (trafficClockTimerRef.current) clearInterval(trafficClockTimerRef.current);
+      if (trafficReconnectTimerRef.current) clearTimeout(trafficReconnectTimerRef.current);
+      if (trafficWsRef.current) {
+        trafficWsRef.current.close();
+        trafficWsRef.current = null;
+      }
     },
     [],
   );
@@ -610,6 +829,19 @@ export function useTightropeState() {
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : 'Failed to load accounts';
+          pushRuntimeEvent(message, 'warn');
+        }
+      }
+      try {
+        await refreshAccountTrafficSnapshot();
+      } catch {
+        // websocket stream will continue to deliver updates
+      }
+      try {
+        await refreshRequestLogs();
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : 'Failed to load request logs';
           pushRuntimeEvent(message, 'warn');
         }
       }
@@ -667,6 +899,24 @@ export function useTightropeState() {
   }, []);
 
   useEffect(() => {
+    const handle = setInterval(() => {
+      void refreshRequestLogs().catch(() => {
+        // request log polling failures are transient while runtime restarts
+      });
+    }, REQUEST_LOGS_REFRESH_MS);
+    return () => clearInterval(handle);
+  }, []);
+
+  useEffect(() => {
+    const handle = setInterval(() => {
+      void refreshAccountTrafficSnapshot().catch(() => {
+        // websocket remains primary, poll keeps traffic indicators alive if ws is unavailable
+      });
+    }, TRAFFIC_SNAPSHOT_POLL_MS);
+    return () => clearInterval(handle);
+  }, []);
+
+  useEffect(() => {
     const api = window.tightrope;
     if (!api?.triggerSync || !canScheduleAutoSync) {
       return;
@@ -682,6 +932,114 @@ export function useTightropeState() {
     }, dashboardSettings.syncIntervalSeconds * 1000);
     return () => clearInterval(handle);
   }, [canScheduleAutoSync, dashboardSettings.syncIntervalSeconds]);
+
+  useEffect(() => {
+    const api = window.tightrope;
+    if (!api?.onOauthDeepLink) {
+      return;
+    }
+    const unsubscribe = api.onOauthDeepLink((event: OauthDeepLinkEvent) => {
+      pushRuntimeEvent(`oauth deep-link received: ${event.kind}`);
+      if (event.kind === 'success') {
+        void completeBrowserOauthFromDeepLink(event.url);
+        return;
+      }
+      startBrowserOauthPolling();
+    });
+    return () => {
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof WebSocket === 'undefined') {
+      return;
+    }
+
+    let disposed = false;
+    const clearReconnectTimer = () => {
+      if (trafficReconnectTimerRef.current) {
+        clearTimeout(trafficReconnectTimerRef.current);
+        trafficReconnectTimerRef.current = null;
+      }
+    };
+    const scheduleReconnect = () => {
+      if (disposed) {
+        return;
+      }
+      clearReconnectTimer();
+      trafficReconnectTimerRef.current = setTimeout(() => {
+        connect();
+      }, TRAFFIC_WS_RECONNECT_MS);
+    };
+    const applyFrameFromBuffer = (buffer: ArrayBuffer) => {
+      const frame = decodeTrafficFrame(buffer);
+      if (!frame) {
+        return;
+      }
+      applyTrafficFrame(frame);
+    };
+    const connect = () => {
+      if (disposed) {
+        return;
+      }
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(trafficWsUrl(state.runtimeState.bind));
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+      ws.binaryType = 'arraybuffer';
+      trafficWsRef.current = ws;
+      ws.onopen = () => {
+        if (disposed) {
+          return;
+        }
+        ws.send('snapshot');
+        void refreshAccountTrafficSnapshot().catch(() => {
+          // websocket snapshot message remains primary source
+        });
+      };
+      ws.onmessage = (event: MessageEvent) => {
+        if (disposed) {
+          return;
+        }
+        const data = event.data;
+        if (data instanceof ArrayBuffer) {
+          applyFrameFromBuffer(data);
+          return;
+        }
+        if (data instanceof Blob) {
+          void data.arrayBuffer().then((buffer) => {
+            if (!disposed) {
+              applyFrameFromBuffer(buffer);
+            }
+          });
+        }
+      };
+      ws.onclose = () => {
+        if (trafficWsRef.current === ws) {
+          trafficWsRef.current = null;
+        }
+        scheduleReconnect();
+      };
+      ws.onerror = () => {
+        ws.close();
+      };
+    };
+
+    connect();
+    return () => {
+      disposed = true;
+      clearReconnectTimer();
+      if (trafficWsRef.current) {
+        trafficWsRef.current.close();
+        trafficWsRef.current = null;
+      }
+    };
+  }, [state.runtimeState.bind]);
 
   function pushRuntimeEvent(text: string, level: StatusNoticeLevel = 'info'): void {
     setState((previous) => ({
@@ -746,19 +1104,33 @@ export function useTightropeState() {
     callbackUrl: string | null,
     fallbackHint: string,
     successEvent: string,
+    options?: { autoClose?: boolean; requireAccountVisible?: boolean },
   ): Promise<void> {
     try {
       const runtimeAccounts = await refreshAccountsFromNative();
+      if (options?.requireAccountVisible && runtimeAccounts.length === 0) {
+        throw new Error('OAuth completed, but no account is visible yet. Please retry.');
+      }
       const selected = selectOauthImportedAccount(runtimeAccounts, callbackUrl, fallbackHint);
       const fallbackEmail = oauthEmailFromHints(callbackUrl, fallbackHint);
-      setState((previous) => ({
-        ...previous,
-        addAccountStep: 'stepSuccess',
-        successEmail: selected?.email ?? fallbackEmail,
-        successPlan: selected?.provider || 'openai',
-        addAccountError: 'Something went wrong.',
-      }));
+      if (options?.autoClose) {
+        setState((previous) => resetAddAccountTransientState({ ...previous, addAccountOpen: false }));
+      } else {
+        setState((previous) => ({
+          ...previous,
+          addAccountStep: 'stepSuccess',
+          successEmail: selected?.email ?? fallbackEmail,
+          successPlan: selected?.provider || 'openai',
+          addAccountError: 'Something went wrong.',
+        }));
+      }
+      if (selected) {
+        setState((previous) => ({ ...previous, selectedAccountDetailId: selected.accountId }));
+      }
       pushRuntimeEvent(successEvent, 'success');
+      if (selected) {
+        void refreshUsageTelemetryAfterAccountAdd(selected.accountId, selected.email);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'OAuth succeeded but account refresh failed';
       setState((previous) => ({
@@ -767,6 +1139,51 @@ export function useTightropeState() {
         addAccountError: message,
       }));
       pushRuntimeEvent(message, 'warn');
+    }
+  }
+
+  async function completeBrowserOauthFromDeepLink(deepLinkUrl: string): Promise<void> {
+    if (oauthDeepLinkFinalizeInFlightRef.current) {
+      return;
+    }
+    oauthDeepLinkFinalizeInFlightRef.current = true;
+    stopBrowserOauthPolling();
+    try {
+      let callbackUrl: string | null = null;
+      let lastError: string | null = null;
+
+      for (let attempt = 0; attempt < OAUTH_DEEP_LINK_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          const status = await oauthStatusRequest();
+          applyOauthStatus(status);
+          callbackUrl = status.callbackUrl ?? callbackUrl;
+          if (status.status === 'error') {
+            throw new Error(status.errorMessage ?? 'Browser OAuth failed');
+          }
+          if (status.status === 'success') {
+            await finalizeOauthAccountSuccess(
+              callbackUrl,
+              deepLinkUrl,
+              'browser oauth completed and account imported',
+              { autoClose: true, requireAccountVisible: true },
+            );
+            return;
+          }
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : 'Failed to verify OAuth status after callback';
+        }
+        await sleep(OAUTH_DEEP_LINK_RETRY_MS);
+      }
+
+      const message = lastError ?? 'OAuth callback was received, but completion was not confirmed';
+      setState((previous) => ({
+        ...previous,
+        addAccountStep: 'stepError',
+        addAccountError: message,
+      }));
+      pushRuntimeEvent(message, 'warn');
+    } finally {
+      oauthDeepLinkFinalizeInFlightRef.current = false;
     }
   }
 
@@ -809,9 +1226,151 @@ export function useTightropeState() {
 
   async function refreshAccountsFromNative(): Promise<RuntimeAccount[]> {
     const runtimeAccounts = await listAccountsRequest();
-    const nextAccounts = runtimeAccounts.map(runtimeAccountToUiAccount);
-    setAccounts(nextAccounts);
+    setAccounts((previous) => {
+      const previousById = new Map(previous.map((account) => [account.id, account]));
+      const next = runtimeAccounts.map((record) => {
+        const mapped = runtimeAccountToUiAccount(record);
+        const existing = previousById.get(mapped.id);
+        if (!existing) {
+          return mapped;
+        }
+        return {
+          ...mapped,
+          trafficUpBytes: existing.trafficUpBytes ?? 0,
+          trafficDownBytes: existing.trafficDownBytes ?? 0,
+          trafficLastUpAtMs: existing.trafficLastUpAtMs ?? 0,
+          trafficLastDownAtMs: existing.trafficLastDownAtMs ?? 0,
+        };
+      });
+
+      if (pendingTrafficByAccountRef.current.size > 0) {
+        for (let i = 0; i < next.length; i += 1) {
+          const pending = pendingTrafficByAccountRef.current.get(next[i].id);
+          if (!pending) {
+            continue;
+          }
+          next[i] = {
+            ...next[i],
+            trafficUpBytes: pending.upBytes,
+            trafficDownBytes: pending.downBytes,
+            trafficLastUpAtMs: pending.lastUpAtMs,
+            trafficLastDownAtMs: pending.lastDownAtMs,
+          };
+          pendingTrafficByAccountRef.current.delete(next[i].id);
+        }
+      }
+      return next;
+    });
     return runtimeAccounts;
+  }
+
+  function applyRuntimeAccountPatch(record: RuntimeAccount): void {
+    const patch = runtimeAccountToUiAccount(record);
+    setAccounts((previous) => {
+      const index = previous.findIndex((account) => account.id === patch.id);
+      if (index < 0) {
+        return previous;
+      }
+      const next = previous.slice();
+      const existing = next[index];
+      next[index] = {
+        ...patch,
+        trafficUpBytes: existing.trafficUpBytes ?? 0,
+        trafficDownBytes: existing.trafficDownBytes ?? 0,
+        trafficLastUpAtMs: existing.trafficLastUpAtMs ?? 0,
+        trafficLastDownAtMs: existing.trafficLastDownAtMs ?? 0,
+      };
+      return next;
+    });
+  }
+
+  function applyTrafficFrame(frame: AccountTrafficFrame): void {
+    setAccounts((previous) => {
+      const index = previous.findIndex((account) => account.id === frame.accountId);
+      if (index < 0) {
+        pendingTrafficByAccountRef.current.set(frame.accountId, frame);
+        return previous;
+      }
+      const current = previous[index];
+      if (
+        (current.trafficUpBytes ?? 0) === frame.upBytes &&
+        (current.trafficDownBytes ?? 0) === frame.downBytes &&
+        (current.trafficLastUpAtMs ?? 0) === frame.lastUpAtMs &&
+        (current.trafficLastDownAtMs ?? 0) === frame.lastDownAtMs
+      ) {
+        return previous;
+      }
+      const next = previous.slice();
+      next[index] = {
+        ...current,
+        trafficUpBytes: frame.upBytes,
+        trafficDownBytes: frame.downBytes,
+        trafficLastUpAtMs: frame.lastUpAtMs,
+        trafficLastDownAtMs: frame.lastDownAtMs,
+      };
+      return next;
+    });
+  }
+
+  function applyTrafficSnapshot(snapshot: RuntimeAccountTraffic[]): void {
+    for (const account of snapshot) {
+      applyTrafficFrame({
+        accountId: account.accountId,
+        upBytes: account.upBytes,
+        downBytes: account.downBytes,
+        lastUpAtMs: account.lastUpAtMs,
+        lastDownAtMs: account.lastDownAtMs,
+      });
+    }
+  }
+
+  async function refreshRequestLogs(): Promise<void> {
+    if (requestLogRefreshInFlightRef.current) {
+      return;
+    }
+    requestLogRefreshInFlightRef.current = true;
+    try {
+      const logs = await listRequestLogsRequest(REQUEST_LOGS_LIMIT, 0);
+      const rows = logs.map(runtimeRequestLogToRouteRow);
+      setState((previous) => ({
+        ...previous,
+        rows,
+        drawerRowId: previous.drawerRowId && rows.some((row) => row.id === previous.drawerRowId) ? previous.drawerRowId : null,
+      }));
+    } finally {
+      requestLogRefreshInFlightRef.current = false;
+    }
+  }
+
+  async function refreshAccountTrafficSnapshot(): Promise<void> {
+    if (trafficSnapshotRefreshInFlightRef.current) {
+      return;
+    }
+    trafficSnapshotRefreshInFlightRef.current = true;
+    try {
+      const accountsSnapshot = await listAccountTrafficRequest();
+      applyTrafficSnapshot(accountsSnapshot);
+    } finally {
+      trafficSnapshotRefreshInFlightRef.current = false;
+    }
+  }
+
+  async function refreshUsageTelemetryAfterAccountAdd(accountId: string, accountName: string): Promise<void> {
+    let lastMessage = 'Failed to refresh usage telemetry';
+    for (let attempt = 0; attempt < ACCOUNT_USAGE_REFRESH_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        const refreshed = await refreshAccountUsageTelemetryRequest(accountId);
+        applyRuntimeAccountPatch(refreshed);
+        pushRuntimeEvent(`usage telemetry refreshed: ${accountName}`, 'success');
+        return;
+      } catch (error) {
+        lastMessage = error instanceof Error ? error.message : 'Failed to refresh usage telemetry';
+      }
+      if (attempt + 1 < ACCOUNT_USAGE_REFRESH_MAX_ATTEMPTS) {
+        await sleep(ACCOUNT_USAGE_REFRESH_RETRY_MS);
+      }
+    }
+    pushRuntimeEvent(`account added, but usage telemetry is unavailable: ${lastMessage}`, 'warn');
   }
 
   async function refreshDashboardSettingsFromNative(): Promise<void> {
@@ -990,39 +1549,50 @@ export function useTightropeState() {
   }
 
   async function createListenerUrl(): Promise<string | null> {
-    try {
-      const response = await oauthStartRequest('browser');
-      const callbackUrl = response.callbackUrl ?? buildListenerUrl(DEFAULT_OAUTH_CALLBACK_PORT, '/auth/callback');
-      const parts = callbackParts(callbackUrl);
-      const authorizationUrl = isValidOAuthAuthorizationUrl(response.authorizationUrl) ? response.authorizationUrl : null;
-      setState((previous) => ({
-        ...previous,
-        browserAuthUrl: authorizationUrl ?? previous.browserAuthUrl,
-        authState: {
-          ...previous.authState,
-          callbackPath: parts.callbackPath,
-          listenerPort: parts.listenerPort,
-          listenerUrl: parts.listenerUrl,
-          listenerRunning: true,
-          initStatus: 'pending',
-          lastResponse: previous.authState.lastResponse,
-        },
-      }));
-      pushRuntimeEvent(`callback URL generated: ${callbackUrl}`);
-      return authorizationUrl;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to start OAuth browser flow';
-      setState((previous) => ({
-        ...previous,
-        authState: {
-          ...previous.authState,
-          initStatus: 'error',
-          lastResponse: message,
-        },
-      }));
-      pushRuntimeEvent(message, 'warn');
-      return null;
+    if (oauthStartInFlightRef.current) {
+      return oauthStartInFlightRef.current;
     }
+
+    const pending = (async () => {
+      try {
+        const response = await oauthStartRequest('browser');
+        const callbackUrl = response.callbackUrl ?? buildListenerUrl(DEFAULT_OAUTH_CALLBACK_PORT, '/auth/callback');
+        const parts = callbackParts(callbackUrl);
+        const authorizationUrl = isValidOAuthAuthorizationUrl(response.authorizationUrl) ? response.authorizationUrl : null;
+        setState((previous) => ({
+          ...previous,
+          browserAuthUrl: authorizationUrl ?? previous.browserAuthUrl,
+          authState: {
+            ...previous.authState,
+            callbackPath: parts.callbackPath,
+            listenerPort: parts.listenerPort,
+            listenerUrl: parts.listenerUrl,
+            listenerRunning: true,
+            initStatus: 'pending',
+            lastResponse: previous.authState.lastResponse,
+          },
+        }));
+        pushRuntimeEvent(`callback URL generated: ${callbackUrl}`);
+        return authorizationUrl;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to start OAuth browser flow';
+        setState((previous) => ({
+          ...previous,
+          authState: {
+            ...previous.authState,
+            initStatus: 'error',
+            lastResponse: message,
+          },
+        }));
+        pushRuntimeEvent(message, 'warn');
+        return null;
+      } finally {
+        oauthStartInFlightRef.current = null;
+      }
+    })();
+
+    oauthStartInFlightRef.current = pending;
+    return pending;
   }
 
   async function pollBrowserOauthStatus(): Promise<void> {
@@ -1050,6 +1620,10 @@ export function useTightropeState() {
           addAccountError: message,
         }));
         pushRuntimeEvent(message, 'warn');
+        return;
+      }
+      if (status.status === 'idle' || status.status === 'stopped') {
+        stopBrowserOauthPolling();
       }
     } catch {
       // keep polling while listener is active
@@ -1490,9 +2064,11 @@ export function useTightropeState() {
         addAccountStep: 'stepSuccess',
         successEmail: imported.email,
         successPlan: imported.provider || 'openai',
+        selectedAccountDetailId: imported.accountId,
         addAccountError: 'Something went wrong.',
       }));
       pushRuntimeEvent(`account imported: ${imported.email}`, 'success');
+      void refreshUsageTelemetryAfterAccountAdd(imported.accountId, imported.email);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Import failed';
       setState((previous) => ({
@@ -1834,6 +2410,8 @@ export function useTightropeState() {
     canPrevSessions: state.sessionsOffset > 0,
     canNextSessions: state.sessionsOffset + SESSIONS_LIMIT < sessionsView.filtered.length,
     kpis,
+    trafficClockMs,
+    trafficActiveWindowMs: TRAFFIC_ACTIVE_WINDOW_MS,
     deterministicAccountDetailValues,
     stableSparklinePercents,
     formatNumber,

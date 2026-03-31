@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
@@ -14,8 +15,37 @@
 namespace tightrope::tests::server {
 
 std::uint16_t next_runtime_port() {
-    static std::atomic<std::uint16_t> port{32100};
-    return static_cast<std::uint16_t>(port.fetch_add(17));
+    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd >= 0) {
+        sockaddr_in address{};
+        std::memset(&address, 0, sizeof(address));
+#if defined(__APPLE__)
+        address.sin_len = static_cast<__uint8_t>(sizeof(address));
+#endif
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        address.sin_port = 0;
+
+        if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0) {
+            sockaddr_in bound{};
+            socklen_t bound_len = sizeof(bound);
+            if (::getsockname(fd, reinterpret_cast<sockaddr*>(&bound), &bound_len) == 0) {
+                const auto selected_port = static_cast<std::uint16_t>(ntohs(bound.sin_port));
+                ::close(fd);
+                if (selected_port != 0) {
+                    return selected_port;
+                }
+            }
+        }
+        ::close(fd);
+    }
+
+    // Fallback for environments where ephemeral bind probing is unavailable.
+    const auto fallback_seed = static_cast<std::uint16_t>(
+        40000 + (static_cast<std::uint16_t>(::getpid()) % static_cast<std::uint16_t>(20000))
+    );
+    static std::atomic<std::uint16_t> fallback_port{fallback_seed};
+    return static_cast<std::uint16_t>(fallback_port.fetch_add(17));
 }
 
 std::string make_temp_runtime_db_path() {

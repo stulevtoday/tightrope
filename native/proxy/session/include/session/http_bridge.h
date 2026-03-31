@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,7 @@ namespace tightrope::proxy::session {
     const std::string& raw_request_body,
     const openai::HeaderMap& headers
 );
+[[nodiscard]] std::optional<std::string> strip_previous_response_id(const std::string& raw_request_body);
 
 void remember_response_id_from_json(const openai::HeaderMap& headers, const std::string& response_body);
 void remember_response_id_from_events(const openai::HeaderMap& headers, const std::vector<std::string>& events);

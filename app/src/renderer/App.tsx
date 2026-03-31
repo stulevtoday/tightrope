@@ -44,6 +44,8 @@ export function App() {
             accounts={model.accounts}
             metrics={model.metrics}
             routedAccountId={model.routedAccountId}
+            trafficNowMs={model.trafficClockMs}
+            trafficActiveWindowMs={model.trafficActiveWindowMs}
             selectedAccountId={model.state.selectedAccountId}
             selectedRouteId={model.state.selectedRouteId}
             selectedRoute={model.selectedRoute}
@@ -71,6 +73,8 @@ export function App() {
             accounts={model.accounts}
             filteredAccounts={model.filteredAccounts}
             selectedAccountDetail={model.selectedAccountDetail}
+            trafficNowMs={model.trafficClockMs}
+            trafficActiveWindowMs={model.trafficActiveWindowMs}
             accountSearchQuery={model.state.accountSearchQuery}
             accountStatusFilter={model.state.accountStatusFilter}
             onOpenAddAccount={model.openAddAccountDialog}

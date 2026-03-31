@@ -1,10 +1,12 @@
 #include "ws_proxy.h"
 
 #include <exception>
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <utility>
 
+#include "account_traffic.h"
 #include "internal/proxy_error_policy.h"
 #include "internal/proxy_service_helpers.h"
 #include "logging/logger.h"
@@ -65,6 +67,14 @@ std::vector<std::string> normalize_upstream_frames(const std::vector<std::string
     return normalized;
 }
 
+std::size_t upstream_payload_bytes(const UpstreamExecutionResult& upstream) {
+    std::size_t bytes = upstream.body.size();
+    for (const auto& event : upstream.events) {
+        bytes += event.size();
+    }
+    return bytes;
+}
+
 } // namespace
 
 ProxyWsResult proxy_responses_websocket(
@@ -91,10 +101,14 @@ ProxyWsResult proxy_responses_websocket(
 
     const auto affinity = session::resolve_sticky_affinity(bridged_request_body, bridged_headers);
     std::string access_token;
+    std::string traffic_account_id;
     auto resolved_affinity = affinity;
     if (const auto credentials = session::resolve_upstream_account_credentials(affinity.account_id); credentials.has_value()) {
         resolved_affinity.account_id = credentials->account_id;
         access_token = credentials->access_token;
+        if (credentials->internal_account_id > 0) {
+            traffic_account_id = std::to_string(credentials->internal_account_id);
+        }
     }
     openai::UpstreamRequestPlan plan;
     try {
@@ -126,17 +140,27 @@ ProxyWsResult proxy_responses_websocket(
     internal::maybe_log_upstream_payload_trace(route, plan);
     session::persist_sticky_affinity(resolved_affinity);
 
-    auto upstream = internal::execute_upstream_with_retry_budget(
-        plan,
-        internal::kStreamRetryBudget,
-        internal::should_retry_stream_result,
-        "responses_ws_upstream_retry"
-    );
+    auto execute_upstream = [&](const openai::UpstreamRequestPlan& current_plan) {
+        record_account_upstream_egress(traffic_account_id, current_plan.body.size());
+        auto result = internal::execute_upstream_with_retry_budget(
+            current_plan,
+            internal::kStreamRetryBudget,
+            internal::should_retry_stream_result,
+            "responses_ws_upstream_retry"
+        );
+        record_account_upstream_ingress(traffic_account_id, upstream_payload_bytes(result));
+        return result;
+    };
+
+    auto upstream = execute_upstream(plan);
     if (upstream.status == 401 && !resolved_affinity.account_id.empty()) {
         if (const auto refreshed = session::refresh_upstream_account_credentials(resolved_affinity.account_id);
             refreshed.has_value()) {
             resolved_affinity.account_id = refreshed->account_id;
             access_token = refreshed->access_token;
+            if (refreshed->internal_account_id > 0) {
+                traffic_account_id = std::to_string(refreshed->internal_account_id);
+            }
             try {
                 plan = openai::build_responses_websocket_request_plan(
                     bridged_request_body,
@@ -145,18 +169,43 @@ ProxyWsResult proxy_responses_websocket(
                     resolved_affinity.account_id,
                     ""
                 );
-                upstream = internal::execute_upstream_with_retry_budget(
-                    plan,
-                    internal::kStreamRetryBudget,
-                    internal::should_retry_stream_result,
-                    "responses_ws_upstream_retry"
-                );
+                upstream = execute_upstream(plan);
             } catch (const std::exception&) {
                 core::logging::log_event(
                     core::logging::LogLevel::Warning,
                     "runtime",
                     "proxy",
                     "responses_ws_refresh_rebuild_failed"
+                );
+            }
+        }
+    }
+    if (internal::resolved_upstream_error_code(upstream) == "previous_response_not_found") {
+        if (const auto stripped_request_body = session::strip_previous_response_id(bridged_request_body);
+            stripped_request_body.has_value() && *stripped_request_body != bridged_request_body) {
+            core::logging::log_event(
+                core::logging::LogLevel::Info,
+                "runtime",
+                "proxy",
+                "responses_previous_response_guard_retry",
+                "route=" + std::string(route)
+            );
+            try {
+                plan = openai::build_responses_websocket_request_plan(
+                    *stripped_request_body,
+                    bridged_headers,
+                    access_token,
+                    resolved_affinity.account_id,
+                    ""
+                );
+                internal::maybe_log_upstream_payload_trace(route, plan);
+                upstream = execute_upstream(plan);
+            } catch (const std::exception&) {
+                core::logging::log_event(
+                    core::logging::LogLevel::Warning,
+                    "runtime",
+                    "proxy",
+                    "responses_previous_response_guard_rebuild_failed"
                 );
             }
         }

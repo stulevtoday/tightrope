@@ -15,14 +15,18 @@ try {
   process.exit(1);
 }
 
+const childEnv = {
+  ...process.env,
+  VITE_DEV_SERVER_URL: 'http://127.0.0.1:5173',
+};
+if (process.env.TIGHTROPE_DISABLE_NATIVE !== '1') {
+  delete childEnv.TIGHTROPE_DISABLE_NATIVE;
+}
+
 const child = spawn(electronBinary, ['.'], {
   cwd: appDir,
   stdio: 'inherit',
-  env: {
-    ...process.env,
-    VITE_DEV_SERVER_URL: 'http://127.0.0.1:5173',
-    TIGHTROPE_DISABLE_NATIVE: process.env.TIGHTROPE_DISABLE_NATIVE || '1',
-  },
+  env: childEnv,
 });
 
 child.on('error', (error) => {

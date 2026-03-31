@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -18,6 +19,7 @@ struct StickyAffinityResolution {
 struct UpstreamAccountCredentials {
     std::string account_id;
     std::string access_token;
+    std::int64_t internal_account_id = 0;
 };
 
 StickyAffinityResolution

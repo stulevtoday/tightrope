@@ -90,7 +90,10 @@ Object.defineProperty(window, 'tightrope', {
     }),
     oauthComplete: async () => ({ status: 'pending' }),
     oauthManualCallback: async () => ({ status: 'success', errorMessage: null }),
+    onOauthDeepLink: () => () => {},
     listAccounts: async () => ({ accounts: [] }),
+    listRequestLogs: async () => ({ limit: 200, offset: 0, logs: [] }),
+    listAccountTraffic: async () => ({ generatedAtMs: Date.now(), accounts: [] }),
     importAccount: async ({ email, provider }: { email: string; provider: string }) => ({
       accountId: '1',
       email,

@@ -17,7 +17,11 @@ interface OauthManualCallbackResult {
   errorMessage?: string | null;
 }
 
-async function runtimeRequest<T>(path: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<T> {
+async function runtimeRequest<T>(
+  path: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string },
+  timeoutMs = 10000,
+): Promise<T> {
   const fetchFn = (globalThis as unknown as { fetch?: (input: string, init?: unknown) => Promise<{
     ok: boolean;
     status: number;
@@ -27,17 +31,36 @@ async function runtimeRequest<T>(path: string, init?: { method?: string; headers
     throw new Error('Runtime HTTP bridge unavailable');
   }
 
-  const response = await fetchFn(`${runtimeBaseUrl}${path}`, init);
-  const payload = (await response.json().catch(() => null)) as T | RuntimeErrorPayload | null;
-  if (response.ok && payload !== null) {
-    return payload as T;
-  }
+  const controller = timeoutMs > 0 && typeof AbortController === 'function' ? new AbortController() : null;
+  const timeout = controller
+    ? setTimeout(() => {
+        controller.abort();
+      }, timeoutMs)
+    : null;
 
-  const errorMessage =
-    (payload as RuntimeErrorPayload | null)?.error?.message ??
-    (payload as RuntimeErrorPayload | null)?.message ??
-    `HTTP ${response.status}`;
-  throw new Error(errorMessage);
+  try {
+    const requestInit = controller ? { ...(init ?? {}), signal: controller.signal } : init;
+    const response = await fetchFn(`${runtimeBaseUrl}${path}`, requestInit);
+    const payload = (await response.json().catch(() => null)) as T | RuntimeErrorPayload | null;
+    if (response.ok && payload !== null) {
+      return payload as T;
+    }
+
+    const errorMessage =
+      (payload as RuntimeErrorPayload | null)?.error?.message ??
+      (payload as RuntimeErrorPayload | null)?.message ??
+      `HTTP ${response.status}`;
+    throw new Error(errorMessage);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Runtime request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 export async function submitOauthManualCallback(callbackUrl: string): Promise<OauthManualCallbackResult> {
@@ -91,6 +114,12 @@ export function registerIpcHandlers(): void {
     submitOauthManualCallback(callbackUrl),
   );
   ipcMain.handle('accounts:list', () => runtimeRequest('/api/accounts'));
+  ipcMain.handle('logs:list', (_event, payload?: { limit?: number; offset?: number }) => {
+    const limit = Number.isFinite(payload?.limit) ? Math.max(1, Math.trunc(payload?.limit ?? 0)) : 200;
+    const offset = Number.isFinite(payload?.offset) ? Math.max(0, Math.trunc(payload?.offset ?? 0)) : 0;
+    return runtimeRequest(`/api/logs?limit=${limit}&offset=${offset}`, undefined, 0);
+  });
+  ipcMain.handle('accounts:traffic', () => runtimeRequest('/api/accounts/traffic', undefined, 0));
   ipcMain.handle('accounts:import', (_event, payload: unknown) =>
     runtimeRequest('/api/accounts/import', {
       method: 'POST',

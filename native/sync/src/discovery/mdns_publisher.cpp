@@ -28,6 +28,8 @@ namespace tightrope::sync::discovery {
 
 namespace {
 
+constexpr std::string_view kServiceEnumerationName = "_services._dns-sd._udp.local.";
+
 void log_mdns(const SyncLogLevel level, const std::string_view event, const std::string_view detail = {}) {
     log_discovery_event(level, "mdns_publisher", event, detail);
 }
@@ -366,11 +368,32 @@ int MdnsPublisher::handle_query(
 
     const auto normalized_query_name = lowercase_ascii({query_name.str, query_name.length});
     const auto normalized_service_name = lowercase_ascii(records->service_name);
-    if (normalized_query_name != normalized_service_name) {
+    const auto normalized_enumeration_name = lowercase_ascii(kServiceEnumerationName);
+    const bool service_query = normalized_query_name == normalized_service_name;
+    const bool enumeration_query = normalized_query_name == normalized_enumeration_name;
+    if (!service_query && !enumeration_query) {
         return 0;
     }
 
     MdnsAlignedBuffer send_buffer{};
+    mdns_record_t answer_record = records->ptr_record;
+    const char* answer_name = records->service_name.c_str();
+    std::size_t answer_name_length = records->service_name.size();
+    const mdns_record_t* additional_records = records->additional_records.data();
+    std::size_t additional_record_count = records->additional_count;
+
+    std::string enumeration_target;
+    if (enumeration_query) {
+        enumeration_target = records->service_name;
+        answer_record.name = {kServiceEnumerationName.data(), kServiceEnumerationName.size()};
+        answer_record.type = MDNS_RECORDTYPE_PTR;
+        answer_record.data.ptr.name = {enumeration_target.c_str(), enumeration_target.size()};
+        answer_name = kServiceEnumerationName.data();
+        answer_name_length = kServiceEnumerationName.size();
+        additional_records = nullptr;
+        additional_record_count = 0;
+    }
+
     const bool unicast = (rclass & MDNS_UNICAST_RESPONSE) != 0;
     if (unicast) {
         (void)publisher->runtime_->query_answer_unicast(
@@ -381,28 +404,28 @@ int MdnsPublisher::handle_query(
             mdns_buffer_size(send_buffer),
             query_id,
             static_cast<mdns_record_type_t>(rtype),
-            records->service_name.c_str(),
-            records->service_name.size(),
-            records->ptr_record,
+            answer_name,
+            answer_name_length,
+            answer_record,
             nullptr,
             0,
-            records->additional_records.data(),
-            records->additional_count);
+            additional_records,
+            additional_record_count);
     } else {
         (void)publisher->runtime_->query_answer_multicast(
             sock,
             mdns_buffer_data(send_buffer),
             mdns_buffer_size(send_buffer),
-            records->ptr_record,
+            answer_record,
             nullptr,
             0,
-            records->additional_records.data(),
-            records->additional_count);
+            additional_records,
+            additional_record_count);
     }
 
     log_mdns(
         SyncLogLevel::Trace,
-        "query_answered",
+        enumeration_query ? "query_answered_service_enumeration" : "query_answered",
         "site_id=" + std::to_string(announcement->site_id) + " query_id=" + std::to_string(query_id) +
             " rtype=" + std::to_string(rtype) + " mode=" + std::string(unicast ? "unicast" : "multicast"));
 

@@ -1,4 +1,4 @@
-export type AccountPlan = 'enterprise' | 'plus';
+export type AccountPlan = 'enterprise' | 'plus' | 'free';
 export type AccountHealth = 'healthy' | 'strained';
 export type AccountState = 'active' | 'paused' | 'rate_limited' | 'deactivated' | 'quota_blocked';
 export type RowStatus = 'ok' | 'warn' | 'error';
@@ -35,6 +35,10 @@ export interface Account {
   failovers: number;
   note: string;
   telemetryBacked: boolean;
+  trafficUpBytes?: number;
+  trafficDownBytes?: number;
+  trafficLastUpAtMs?: number;
+  trafficLastDownAtMs?: number;
 }
 
 export interface RouteRow {
@@ -48,6 +52,12 @@ export interface RouteRow {
   protocol: Protocol;
   sessionId: string;
   sticky: boolean;
+  method?: string;
+  path?: string;
+  statusCode?: number;
+  errorCode?: string | null;
+  requestedAt?: string;
+  totalCost?: number;
 }
 
 export interface RoutingMode {
@@ -245,6 +255,11 @@ export interface ManualCallbackResponse {
   errorMessage: string | null;
 }
 
+export interface OauthDeepLinkEvent {
+  kind: 'success' | 'callback';
+  url: string;
+}
+
 export interface RuntimeAccount {
   accountId: string;
   email: string;
@@ -265,6 +280,38 @@ export interface RuntimeAccount {
 
 export interface RuntimeAccountsListResponse {
   accounts: RuntimeAccount[];
+}
+
+export interface RuntimeRequestLog {
+  id: number;
+  accountId: string | null;
+  path: string;
+  method: string;
+  statusCode: number;
+  model: string | null;
+  requestedAt: string;
+  errorCode: string | null;
+  transport: string | null;
+  totalCost: number;
+}
+
+export interface RuntimeRequestLogsResponse {
+  limit: number;
+  offset: number;
+  logs: RuntimeRequestLog[];
+}
+
+export interface RuntimeAccountTraffic {
+  accountId: string;
+  upBytes: number;
+  downBytes: number;
+  lastUpAtMs: number;
+  lastDownAtMs: number;
+}
+
+export interface RuntimeAccountTrafficResponse {
+  generatedAtMs: number;
+  accounts: RuntimeAccountTraffic[];
 }
 
 export interface ClusterPeerStatus {
@@ -302,7 +349,10 @@ export interface ElectronApi {
   oauthRestart: () => Promise<OauthStartResponse>;
   oauthComplete: (payload: { deviceAuthId?: string; userCode?: string }) => Promise<OauthCompleteResponse>;
   oauthManualCallback: (callbackUrl: string) => Promise<ManualCallbackResponse>;
+  onOauthDeepLink: (listener: (event: OauthDeepLinkEvent) => void) => () => void;
   listAccounts: () => Promise<RuntimeAccountsListResponse>;
+  listRequestLogs: (payload?: { limit?: number; offset?: number }) => Promise<RuntimeRequestLogsResponse>;
+  listAccountTraffic: () => Promise<RuntimeAccountTrafficResponse>;
   importAccount: (payload: { email: string; provider: string }) => Promise<RuntimeAccount>;
   pauseAccount: (accountId: string) => Promise<{ status: string }>;
   reactivateAccount: (accountId: string) => Promise<{ status: string }>;

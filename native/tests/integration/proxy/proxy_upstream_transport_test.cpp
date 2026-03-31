@@ -215,6 +215,41 @@ TEST_CASE("responses JSON path reuses sticky account by prompt cache key", "[pro
 }
 
 TEST_CASE(
+    "responses JSON path retries without previous_response_id after previous_response_not_found",
+    "[proxy][transport][guard]"
+) {
+    std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            observed_plans.push_back(plan);
+            if (observed_plans.size() == 1) {
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 400,
+                    .body =
+                        R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
+                    .error_code = "previous_response_not_found",
+                };
+            }
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .body = R"({"id":"resp_guard_json_success","object":"response","status":"completed","output":[]})",
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const std::string payload =
+        R"({"model":"gpt-5.4","input":"guard json retry","previous_response_id":"resp_stale_json_guard"})";
+    const auto response = tightrope::server::controllers::post_proxy_responses_json("/v1/responses", payload);
+
+    REQUIRE(response.status == 200);
+    REQUIRE(response.body.find("\"id\":\"resp_guard_json_success\"") != std::string::npos);
+    REQUIRE(observed_plans.size() == 2);
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_json_guard\"") != std::string::npos);
+    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
+}
+
+TEST_CASE(
     "responses SSE path carries previous_response_id across requests with shared session continuity",
     "[proxy][transport][bridge]"
 ) {
@@ -273,6 +308,44 @@ TEST_CASE("responses SSE path returns upstream events when available", "[proxy][
     REQUIRE(response.events == std::vector<std::string>{R"({"event":"a"})", R"({"event":"b"})"});
 
     tightrope::proxy::reset_upstream_transport();
+}
+
+TEST_CASE(
+    "responses SSE path retries without previous_response_id after previous_response_not_found",
+    "[proxy][transport][guard][sse]"
+) {
+    std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            observed_plans.push_back(plan);
+            if (observed_plans.size() == 1) {
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 400,
+                    .body =
+                        R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
+                    .error_code = "previous_response_not_found",
+                };
+            }
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .events = {
+                    R"({"type":"response.created","response":{"id":"resp_guard_sse_success","status":"in_progress"}})",
+                    R"({"type":"response.completed","response":{"id":"resp_guard_sse_success","object":"response","status":"completed","output":[]}})",
+                },
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const std::string payload =
+        R"({"model":"gpt-5.4","input":"guard sse retry","previous_response_id":"resp_stale_sse_guard"})";
+    const auto response = tightrope::server::controllers::post_proxy_responses_sse("/v1/responses", payload);
+
+    REQUIRE(response.status == 200);
+    REQUIRE(response.events.size() == 2);
+    REQUIRE(observed_plans.size() == 2);
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_sse_guard\"") != std::string::npos);
+    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
 }
 
 TEST_CASE("responses SSE path resolves websocket upstream transport for native codex headers", "[proxy][transport]") {
@@ -399,6 +472,90 @@ TEST_CASE(
     REQUIRE(observed_plans.size() == 2);
     REQUIRE(observed_plans[0].body.find("\"previous_response_id\"") == std::string::npos);
     REQUIRE(observed_plans[1].body.find("\"previous_response_id\":\"resp_bridge_ws_1\"") != std::string::npos);
+}
+
+TEST_CASE(
+    "responses websocket path retries without previous_response_id after previous_response_not_found",
+    "[proxy][transport][ws][guard]"
+) {
+    std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            observed_plans.push_back(plan);
+            if (observed_plans.size() == 1) {
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 400,
+                    .body =
+                        R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
+                    .error_code = "previous_response_not_found",
+                };
+            }
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 101,
+                .events = {
+                    R"({"type":"response.created","response":{"id":"resp_guard_ws_success","status":"in_progress"}})",
+                    R"({"type":"response.completed","response":{"id":"resp_guard_ws_success","object":"response","status":"completed","output":[]}})",
+                },
+                .accepted = true,
+                .close_code = 1000,
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const std::string payload =
+        R"({"model":"gpt-5.4","input":"guard ws retry","previous_response_id":"resp_stale_ws_guard"})";
+    const auto response = tightrope::server::controllers::proxy_responses_websocket("/v1/responses", payload);
+
+    REQUIRE(response.status == 101);
+    REQUIRE(response.accepted);
+    REQUIRE(observed_plans.size() == 2);
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_ws_guard\"") != std::string::npos);
+    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
+}
+
+TEST_CASE(
+    "responses websocket path retries without previous_response_id when upstream returns 101 with previous_response_not_found event",
+    "[proxy][transport][ws][guard]"
+) {
+    std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            observed_plans.push_back(plan);
+            if (observed_plans.size() == 1) {
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 101,
+                    .events = {
+                        R"({"type":"response.failed","response":{"id":"resp_guard_ws_failed","status":"failed"},"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
+                        R"({"type":"response.completed","response":{"id":"resp_guard_ws_failed","object":"response","status":"failed","output":[]}})",
+                    },
+                    .accepted = true,
+                    .close_code = 1000,
+                    .error_code = "previous_response_not_found",
+                };
+            }
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 101,
+                .events = {
+                    R"({"type":"response.created","response":{"id":"resp_guard_ws_success_101","status":"in_progress"}})",
+                    R"({"type":"response.completed","response":{"id":"resp_guard_ws_success_101","object":"response","status":"completed","output":[]}})",
+                },
+                .accepted = true,
+                .close_code = 1000,
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const std::string payload =
+        R"({"model":"gpt-5.4","input":"guard ws retry 101","previous_response_id":"resp_stale_ws_guard_101"})";
+    const auto response = tightrope::server::controllers::proxy_responses_websocket("/v1/responses", payload);
+
+    REQUIRE(response.status == 101);
+    REQUIRE(response.accepted);
+    REQUIRE(observed_plans.size() == 2);
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_ws_guard_101\"") != std::string::npos);
+    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
 }
 
 TEST_CASE("websocket proxy path rejects invalid payload before upstream call", "[proxy][transport][ws]") {

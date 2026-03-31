@@ -9,6 +9,7 @@
 #include <uwebsockets/App.h>
 
 #include "logging/logger.h"
+#include "account_traffic.h"
 #include "internal/server_routes.h"
 
 namespace tightrope::server {
@@ -48,6 +49,7 @@ bool Runtime::start(const RuntimeConfig& config) noexcept {
         impl_->startup_done = false;
         impl_->startup_ok = false;
     }
+    proxy::clear_account_traffic_update_callback();
 
     impl_->worker = std::thread([this, config] {
         auto app = std::make_unique<uWS::App>();
@@ -102,24 +104,24 @@ bool Runtime::start(const RuntimeConfig& config) noexcept {
         impl_->running = false;
         impl_->app = nullptr;
         impl_->loop = nullptr;
-        impl_->startup_done = false;
-        impl_->startup_ok = false;
     });
 
+    bool startup_signaled = false;
     bool started = false;
     {
         std::unique_lock lock(impl_->mutex);
-        started = impl_->startup_cv.wait_for(lock, std::chrono::seconds(5), [this] { return impl_->startup_done; }) &&
-                  impl_->startup_ok;
+        startup_signaled = impl_->startup_cv.wait_for(lock, std::chrono::seconds(5), [this] { return impl_->startup_done; });
+        started = startup_signaled && impl_->startup_ok;
     }
 
     if (!started) {
+        const auto reason = startup_signaled ? "listen_failed" : "startup_timeout";
         core::logging::log_event(
             core::logging::LogLevel::Error,
             "runtime",
             "server",
             "start_failed",
-            "reason=startup_timeout"
+            std::string("reason=") + reason
         );
         stop();
         return false;
@@ -149,6 +151,7 @@ bool Runtime::stop() noexcept {
     if (impl_->worker.joinable()) {
         impl_->worker.join();
     }
+    proxy::clear_account_traffic_update_callback();
 
     std::lock_guard lock(impl_->mutex);
     impl_->running = false;

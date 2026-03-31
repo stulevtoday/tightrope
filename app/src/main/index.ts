@@ -4,6 +4,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { app, BrowserWindow } from 'electron';
+import { ensureTightropeCodexSetup } from './codexSetup';
 import { native } from './native';
 import { registerIpcHandlers, submitOauthManualCallback } from './ipc';
 
@@ -46,6 +47,23 @@ function isOauthCallbackDeepLink(url: URL): boolean {
   );
 }
 
+function isOauthSuccessDeepLink(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  const pathname = url.pathname.toLowerCase();
+  return (
+    ((host === 'oauth' || host === 'auth') && pathname === '/success') ||
+    pathname === '/oauth/success' ||
+    pathname === '/auth/success'
+  );
+}
+
+function emitOauthDeepLink(kind: 'success' | 'callback', url: string): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.send('oauth:deep-link', { kind, url });
+}
+
 function findDeepLinkArg(argv: readonly string[]): string | null {
   return argv.find((value) => isTightropeDeepLink(value)) ?? null;
 }
@@ -69,6 +87,10 @@ async function processDeepLink(raw: string): Promise<void> {
     return;
   }
   focusMainWindow();
+  if (isOauthSuccessDeepLink(parsed)) {
+    emitOauthDeepLink('success', raw);
+    return;
+  }
   if (!isOauthCallbackDeepLink(parsed)) {
     return;
   }
@@ -78,6 +100,7 @@ async function processDeepLink(raw: string): Promise<void> {
       status: response.status,
       callbackUrl: raw,
     });
+    emitOauthDeepLink('callback', raw);
   } catch (error) {
     console.error('[tightrope] deep link oauth callback failed', { callbackUrl: raw, error });
   }
@@ -145,6 +168,7 @@ app.on('open-url', (event, url) => {
 
 app.whenReady().then(async () => {
   registerTightropeProtocolClient();
+  await ensureTightropeCodexSetup();
 
   await native.init({
     host: '127.0.0.1',

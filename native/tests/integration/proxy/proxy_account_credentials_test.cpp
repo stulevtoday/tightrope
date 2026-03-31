@@ -1,14 +1,18 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include <sqlite3.h>
 
 #include "migration/migration_runner.h"
 #include "oauth/token_refresh.h"
 #include "repositories/account_repo.h"
+#include "repositories/settings_repo.h"
 #include "controllers/proxy_controller.h"
 #include "server/oauth_provider_fake.h"
 #include "server/runtime_test_utils.h"
@@ -22,7 +26,7 @@ struct RefreshProviderGuard {
     }
 };
 
-void seed_account(
+std::int64_t seed_account(
     sqlite3* db,
     const std::string& email,
     const std::string& account_id,
@@ -36,21 +40,58 @@ void seed_account(
     account.access_token_encrypted = access_token;
     account.refresh_token_encrypted = "refresh-" + account_id;
     account.id_token_encrypted = "id-" + account_id;
-    REQUIRE(tightrope::db::upsert_oauth_account(db, account).has_value());
+    const auto created = tightrope::db::upsert_oauth_account(db, account);
+    REQUIRE(created.has_value());
+    return created->id;
 }
 
-std::string make_oauth_db_with_accounts() {
-    const auto db_path = tightrope::tests::server::make_temp_runtime_db_path();
+struct SeededAccounts {
+    std::string db_path;
+    std::int64_t first_internal_id = 0;
+    std::int64_t second_internal_id = 0;
+};
+
+SeededAccounts make_oauth_db_with_two_accounts() {
+    SeededAccounts seeded;
+    seeded.db_path = tightrope::tests::server::make_temp_runtime_db_path();
     sqlite3* db = nullptr;
-    REQUIRE(sqlite3_open_v2(db_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_open_v2(seeded.db_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
     REQUIRE(db != nullptr);
     REQUIRE(tightrope::db::run_migrations(db));
 
-    seed_account(db, "first@example.com", "acc-first", "token-first");
-    seed_account(db, "second@example.com", "acc-second", "token-second");
+    seeded.first_internal_id = seed_account(db, "first@example.com", "acc-first", "token-first");
+    seeded.second_internal_id = seed_account(db, "second@example.com", "acc-second", "token-second");
 
     sqlite3_close(db);
-    return db_path;
+    return seeded;
+}
+
+std::string make_oauth_db_with_accounts() {
+    const auto seeded = make_oauth_db_with_two_accounts();
+    return seeded.db_path;
+}
+
+sqlite3* open_db_readwrite(const std::string& db_path) {
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open_v2(db_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
+    REQUIRE(db != nullptr);
+    return db;
+}
+
+void configure_routing_strategy(sqlite3* db, std::string strategy) {
+    tightrope::db::DashboardSettingsPatch patch;
+    patch.routing_strategy = std::move(strategy);
+    const auto updated = tightrope::db::update_dashboard_settings(db, patch);
+    REQUIRE(updated.has_value());
+}
+
+void set_quota_usage(
+    sqlite3* db,
+    const std::int64_t account_id,
+    const std::optional<int> quota_primary_percent,
+    const std::optional<int> quota_secondary_percent
+) {
+    REQUIRE(tightrope::db::update_account_usage_telemetry(db, account_id, quota_primary_percent, quota_secondary_percent));
 }
 
 std::string make_oauth_db_with_single_account(
@@ -110,8 +151,106 @@ TEST_CASE("responses JSON uses persisted OAuth account token for upstream author
     std::filesystem::remove(db_path);
 }
 
+TEST_CASE(
+    "responses JSON routes account selection from usage-weighted strategy when no account is pinned",
+    "[proxy][auth][credentials][routing]"
+) {
+    const auto seeded = make_oauth_db_with_two_accounts();
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        configure_routing_strategy(db, "usage_weighted");
+        set_quota_usage(db, seeded.first_internal_id, 90, 90);
+        set_quota_usage(db, seeded.second_internal_id, 10, 10);
+        sqlite3_close(db);
+    }
+
+    tightrope::tests::server::EnvVarGuard db_path_guard{"TIGHTROPE_DB_PATH"};
+    REQUIRE(db_path_guard.set(seeded.db_path));
+
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [](const tightrope::proxy::openai::UpstreamRequestPlan&) {
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .body = R"({"id":"resp_usage_weighted","object":"response","status":"completed","output":[]})",
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const auto response = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":"usage-weighted-check"})"
+    );
+
+    REQUIRE(response.status == 200);
+    REQUIRE(fake->call_count == 1);
+    REQUIRE(fake->last_plan.headers.find("Authorization") != fake->last_plan.headers.end());
+    REQUIRE(fake->last_plan.headers.at("Authorization") == "Bearer token-second");
+    REQUIRE(fake->last_plan.headers.find("chatgpt-account-id") != fake->last_plan.headers.end());
+    REQUIRE(fake->last_plan.headers.at("chatgpt-account-id") == "acc-second");
+
+    std::filesystem::remove(seeded.db_path);
+}
+
+TEST_CASE(
+    "responses JSON round-robin strategy rotates account selection between eligible accounts",
+    "[proxy][auth][credentials][routing]"
+) {
+    const auto seeded = make_oauth_db_with_two_accounts();
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        configure_routing_strategy(db, "round_robin");
+        set_quota_usage(db, seeded.first_internal_id, 50, 50);
+        set_quota_usage(db, seeded.second_internal_id, 50, 50);
+        sqlite3_close(db);
+    }
+
+    tightrope::tests::server::EnvVarGuard db_path_guard{"TIGHTROPE_DB_PATH"};
+    REQUIRE(db_path_guard.set(seeded.db_path));
+
+    std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            observed_plans.push_back(plan);
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .body = R"({"id":"resp_round_robin","object":"response","status":"completed","output":[]})",
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const auto first = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":"round-robin-check-1"})"
+    );
+    const auto second = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":"round-robin-check-2"})"
+    );
+
+    REQUIRE(first.status == 200);
+    REQUIRE(second.status == 200);
+    REQUIRE(observed_plans.size() == 2);
+    REQUIRE(observed_plans[0].headers.at("chatgpt-account-id") == "acc-second");
+    REQUIRE(observed_plans[0].headers.at("Authorization") == "Bearer token-second");
+    REQUIRE(observed_plans[1].headers.at("chatgpt-account-id") == "acc-first");
+    REQUIRE(observed_plans[1].headers.at("Authorization") == "Bearer token-first");
+
+    std::filesystem::remove(seeded.db_path);
+}
+
 TEST_CASE("explicit chatgpt-account-id header selects matching persisted OAuth account token", "[proxy][auth][credentials]") {
-    const auto db_path = make_oauth_db_with_accounts();
+    const auto seeded = make_oauth_db_with_two_accounts();
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        configure_routing_strategy(db, "usage_weighted");
+        set_quota_usage(db, seeded.first_internal_id, 95, 95);
+        set_quota_usage(db, seeded.second_internal_id, 5, 5);
+        sqlite3_close(db);
+    }
+
+    const auto& db_path = seeded.db_path;
     tightrope::tests::server::EnvVarGuard db_path_guard{"TIGHTROPE_DB_PATH"};
     REQUIRE(db_path_guard.set(db_path));
 
@@ -151,6 +290,54 @@ TEST_CASE("explicit chatgpt-account-id header selects matching persisted OAuth a
     REQUIRE(fake->last_plan.headers.at("chatgpt-account-id") == "acc-first");
 
     std::filesystem::remove(db_path);
+}
+
+TEST_CASE(
+    "sticky affinity account selection takes precedence over routing strategy defaults",
+    "[proxy][auth][credentials][routing][sticky]"
+) {
+    const auto seeded = make_oauth_db_with_two_accounts();
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        configure_routing_strategy(db, "usage_weighted");
+        set_quota_usage(db, seeded.first_internal_id, 95, 95);
+        set_quota_usage(db, seeded.second_internal_id, 5, 5);
+        sqlite3_close(db);
+    }
+
+    tightrope::tests::server::EnvVarGuard db_path_guard{"TIGHTROPE_DB_PATH"};
+    REQUIRE(db_path_guard.set(seeded.db_path));
+
+    std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            observed_plans.push_back(plan);
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .body = R"({"id":"resp_sticky_routing","object":"response","status":"completed","output":[]})",
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const std::string payload =
+        R"({"model":"gpt-5.4","input":"sticky-routing-check","prompt_cache_key":"sticky-routing-key"})";
+    const auto first = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        payload,
+        {{"chatgpt-account-id", "acc-first"}}
+    );
+    const auto second = tightrope::server::controllers::post_proxy_responses_json("/v1/responses", payload);
+
+    REQUIRE(first.status == 200);
+    REQUIRE(second.status == 200);
+    REQUIRE(observed_plans.size() == 2);
+    REQUIRE(observed_plans[0].headers.at("chatgpt-account-id") == "acc-first");
+    REQUIRE(observed_plans[0].headers.at("Authorization") == "Bearer token-first");
+    REQUIRE(observed_plans[1].headers.at("chatgpt-account-id") == "acc-first");
+    REQUIRE(observed_plans[1].headers.at("Authorization") == "Bearer token-first");
+
+    std::filesystem::remove(seeded.db_path);
 }
 
 TEST_CASE("transcribe uses persisted OAuth account credentials for upstream calls", "[proxy][auth][credentials]") {

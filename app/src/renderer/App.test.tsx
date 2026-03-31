@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { App } from './App';
@@ -102,6 +102,22 @@ describe('App', () => {
     expect(within(requestUsageCard as HTMLElement).getAllByText('—').length).toBeGreaterThanOrEqual(4);
   });
 
+  test('maps free account plans from runtime telemetry', async () => {
+    const user = userEvent.setup();
+    const listAccounts = vi.fn(async () => ({
+      accounts: [{ accountId: 'acc-free', email: 'free@example.com', provider: 'openai', status: 'active', planType: 'free' }],
+    }));
+    window.tightrope = {
+      ...window.tightrope,
+      listAccounts,
+    };
+
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: /Accounts/i }));
+    const freeAccount = await screen.findByRole('button', { name: /free@example\.com/i });
+    expect(freeAccount).toHaveTextContent(/free/i);
+  });
+
   test('wires browser oauth manual callback flow to account refresh', async () => {
     const user = userEvent.setup();
     const oauthStart = vi.fn(async () => ({
@@ -118,6 +134,15 @@ describe('App', () => {
       status: 'success',
       errorMessage: null,
     }));
+    const refreshAccountUsageTelemetry = vi.fn(async (accountId: string) => ({
+      accountId,
+      email: 'alice@example.com',
+      provider: 'openai',
+      status: 'active',
+      planType: 'plus',
+      quotaPrimaryPercent: 20,
+      quotaSecondaryPercent: 35,
+    }));
     const listAccounts = vi
       .fn()
       .mockResolvedValueOnce({ accounts: [] })
@@ -128,6 +153,7 @@ describe('App', () => {
       ...window.tightrope,
       oauthStart,
       oauthManualCallback,
+      refreshAccountUsageTelemetry,
       listAccounts,
     };
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
@@ -144,6 +170,7 @@ describe('App', () => {
     await waitFor(() => expect(oauthStart).toHaveBeenCalledWith({ forceMethod: 'browser' }));
     await waitFor(() => expect(oauthManualCallback).toHaveBeenCalledWith(callbackUrl));
     await waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(refreshAccountUsageTelemetry).toHaveBeenCalledWith('12'));
     expect(openSpy).toHaveBeenCalled();
     expect(await screen.findByText('Account added')).toBeInTheDocument();
     openSpy.mockRestore();
@@ -219,6 +246,83 @@ describe('App', () => {
     expect(importAccount).not.toHaveBeenCalled();
     expect(openSpy).toHaveBeenCalled();
     expect(await screen.findByText('Account added')).toBeInTheDocument();
+    openSpy.mockRestore();
+  });
+
+  test('handles oauth deep-link success event and refreshes accounts immediately', async () => {
+    const user = userEvent.setup();
+    let deepLinkListener: ((event: { kind: 'success' | 'callback'; url: string }) => void) | null = null;
+    let deepLinkSuccessTriggered = false;
+
+    const onOauthDeepLink = vi.fn((listener: (event: { kind: 'success' | 'callback'; url: string }) => void) => {
+      deepLinkListener = listener;
+      return () => {
+        if (deepLinkListener === listener) {
+          deepLinkListener = null;
+        }
+      };
+    });
+    const oauthStart = vi.fn(async () => ({
+      method: 'browser',
+      authorizationUrl: 'https://auth.openai.com/oauth/authorize?response_type=code&state=state-deep-link',
+      callbackUrl: 'http://localhost:1455/auth/callback',
+      verificationUrl: null,
+      userCode: null,
+      deviceAuthId: null,
+      intervalSeconds: null,
+      expiresInSeconds: null,
+    }));
+    const oauthStatus = vi.fn(async () => {
+      if (deepLinkSuccessTriggered) {
+        return {
+          status: 'success',
+          errorMessage: null,
+          listenerRunning: false,
+          callbackUrl: 'http://localhost:1455/auth/callback?code=ok&state=state-deep-link&email=deep-link@example.com',
+          authorizationUrl: 'https://auth.openai.com/oauth/authorize?response_type=code&state=state-deep-link',
+        };
+      }
+      return {
+        status: 'pending',
+        errorMessage: null,
+        listenerRunning: true,
+        callbackUrl: 'http://localhost:1455/auth/callback',
+        authorizationUrl: 'https://auth.openai.com/oauth/authorize?response_type=code&state=state-deep-link',
+      };
+    });
+    const listAccounts = vi
+      .fn()
+      .mockResolvedValueOnce({ accounts: [] })
+      .mockResolvedValueOnce({
+        accounts: [{ accountId: '15', email: 'deep-link@example.com', provider: 'openai', status: 'active' }],
+      });
+    window.tightrope = {
+      ...window.tightrope,
+      onOauthDeepLink,
+      oauthStart,
+      oauthStatus,
+      listAccounts,
+    };
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    render(<App />);
+    await user.click(screen.getAllByRole('button', { name: '+ Add' })[0]);
+    await user.click(screen.getByRole('button', { name: /Browser sign-in/i }));
+    await user.click(screen.getByRole('button', { name: 'Open sign-in page' }));
+
+    await waitFor(() => expect(onOauthDeepLink).toHaveBeenCalledTimes(1));
+    expect(deepLinkListener).not.toBeNull();
+
+    deepLinkSuccessTriggered = true;
+    act(() => {
+      deepLinkListener?.({ kind: 'success', url: 'tightrope://oauth/success' });
+    });
+
+    await waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(2));
+    expect(openSpy).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Open sign-in page' })).not.toBeInTheDocument(),
+    );
     openSpy.mockRestore();
   });
 

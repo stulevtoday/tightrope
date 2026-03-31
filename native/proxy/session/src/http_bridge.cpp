@@ -109,6 +109,16 @@ std::optional<std::string> inject_previous_response_id(
     return serialize_json(object);
 }
 
+std::optional<std::string> strip_previous_response_id_impl(const std::string& raw_request_body) {
+    Json payload;
+    if (const auto ec = glz::read_json(payload, raw_request_body); ec || !payload.is_object()) {
+        return std::nullopt;
+    }
+    auto object = payload.get_object();
+    object.erase("previous_response_id");
+    return serialize_json(object);
+}
+
 std::optional<std::string> response_id_from_json_body(const std::string& response_body) {
     Json payload;
     if (const auto ec = glz::read_json(payload, response_body); ec || !payload.is_object()) {
@@ -244,6 +254,10 @@ std::string inject_previous_response_id_from_bridge(
         return raw_request_body;
     }
     return *injected;
+}
+
+std::optional<std::string> strip_previous_response_id(const std::string& raw_request_body) {
+    return strip_previous_response_id_impl(raw_request_body);
 }
 
 void remember_response_id_from_json(const openai::HeaderMap& headers, const std::string& response_body) {

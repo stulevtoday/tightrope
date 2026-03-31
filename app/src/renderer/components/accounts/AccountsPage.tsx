@@ -7,6 +7,8 @@ interface AccountsPageProps {
   accounts: Account[];
   filteredAccounts: Account[];
   selectedAccountDetail: Account | null;
+  trafficNowMs: number;
+  trafficActiveWindowMs: number;
   accountSearchQuery: string;
   accountStatusFilter: '' | 'active' | 'paused' | 'rate_limited' | 'deactivated' | 'quota_blocked';
   onOpenAddAccount: () => void;
@@ -33,6 +35,8 @@ export function AccountsPage({
   accounts,
   filteredAccounts,
   selectedAccountDetail,
+  trafficNowMs,
+  trafficActiveWindowMs,
   accountSearchQuery,
   accountStatusFilter,
   onOpenAddAccount,
@@ -55,6 +59,8 @@ export function AccountsPage({
       <AccountsSidebar
         filteredAccounts={filteredAccounts}
         selectedAccountDetail={selectedAccountDetail}
+        trafficNowMs={trafficNowMs}
+        trafficActiveWindowMs={trafficActiveWindowMs}
         accountSearchQuery={accountSearchQuery}
         accountStatusFilter={accountStatusFilter}
         onOpenAddAccount={onOpenAddAccount}

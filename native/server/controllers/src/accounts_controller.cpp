@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <optional>
 
 #include "controller_db.h"
+#include "account_traffic.h"
 #include "repositories/account_repo.h"
 #include "text/ascii.h"
 #include "usage_fetcher.h"
@@ -63,6 +65,11 @@ std::optional<db::AccountRecord> find_account_record(sqlite3* database, const st
         return std::nullopt;
     }
     return *it;
+}
+
+std::int64_t now_ms() {
+    const auto now = std::chrono::system_clock::now().time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
 }
 
 } // namespace
@@ -246,6 +253,35 @@ AccountMutationResponse refresh_account_usage(const std::string_view account_id,
         .status = 200,
         .account = to_payload(*refreshed),
     };
+}
+
+AccountTrafficResponse list_account_proxy_traffic(sqlite3* db) {
+    auto handle = open_controller_db(db);
+    if (handle.db == nullptr) {
+        return {
+            .status = 500,
+            .code = "db_unavailable",
+            .message = "Database unavailable",
+        };
+    }
+
+    AccountTrafficResponse response{
+        .status = 200,
+        .generated_at_ms = now_ms(),
+    };
+    for (const auto& snapshot : proxy::snapshot_account_traffic()) {
+        if (snapshot.account_id.empty()) {
+            continue;
+        }
+        response.accounts.push_back({
+            .account_id = snapshot.account_id,
+            .up_bytes = snapshot.up_bytes,
+            .down_bytes = snapshot.down_bytes,
+            .last_up_at_ms = snapshot.last_up_at_ms,
+            .last_down_at_ms = snapshot.last_down_at_ms,
+        });
+    }
+    return response;
 }
 
 } // namespace tightrope::server::controllers

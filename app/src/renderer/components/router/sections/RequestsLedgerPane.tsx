@@ -81,6 +81,7 @@ export function RequestsLedgerPane({
               ) : (
                 visibleRows.map((row) => {
                   const accountName = accounts.find((account) => account.id === row.accountId)?.name ?? row.accountId;
+                  const requestLabel = row.path ? `${row.method ?? 'POST'} ${row.path}` : row.id;
                   const metric = metrics.get(row.accountId);
                   const scoreText = metric && Number.isFinite(metric.score) ? metric.score.toFixed(3) : '∞';
                   return (
@@ -97,7 +98,7 @@ export function RequestsLedgerPane({
                       }}
                     >
                       <td>{row.time}</td>
-                      <td className="mono">{row.id}</td>
+                      <td className="mono">{requestLabel}</td>
                       <td>{row.protocol}</td>
                       <td className="model-cell">{row.model}</td>
                       <td className="account-cell">{accountName}</td>

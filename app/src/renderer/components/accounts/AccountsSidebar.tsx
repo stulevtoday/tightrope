@@ -3,6 +3,8 @@ import type { Account } from '../../shared/types';
 interface AccountsSidebarProps {
   filteredAccounts: Account[];
   selectedAccountDetail: Account | null;
+  trafficNowMs: number;
+  trafficActiveWindowMs: number;
   accountSearchQuery: string;
   accountStatusFilter: '' | 'active' | 'paused' | 'rate_limited' | 'deactivated' | 'quota_blocked';
   onOpenAddAccount: () => void;
@@ -14,6 +16,8 @@ interface AccountsSidebarProps {
 export function AccountsSidebar({
   filteredAccounts,
   selectedAccountDetail,
+  trafficNowMs,
+  trafficActiveWindowMs,
   accountSearchQuery,
   accountStatusFilter,
   onOpenAddAccount,
@@ -61,6 +65,13 @@ export function AccountsSidebar({
                 account.state === 'active' ? null : (
                   <span className={`status-badge ${account.state === 'paused' ? 'warn' : 'err'}`}>{account.state.replace('_', ' ')}</span>
                 );
+              const hasOutboundInFlight = (account.trafficUpBytes ?? 0) > (account.trafficDownBytes ?? 0);
+              const upActive =
+                hasOutboundInFlight ||
+                ((account.trafficLastUpAtMs ?? 0) > 0 && trafficNowMs - (account.trafficLastUpAtMs ?? 0) <= trafficActiveWindowMs);
+              const downActive =
+                (account.trafficLastDownAtMs ?? 0) > 0 &&
+                trafficNowMs - (account.trafficLastDownAtMs ?? 0) <= trafficActiveWindowMs;
               return (
                 <button
                   key={account.id}
@@ -70,9 +81,15 @@ export function AccountsSidebar({
                 >
                   <div className="account-top">
                     <span className="account-name">{account.name}</span>
-                    <span className="account-plan">
-                      {account.plan} {stateLabel}
-                    </span>
+                    <div className="account-top-right">
+                      <span className={`traffic-indicator${upActive || downActive ? ' active' : ''}`} aria-hidden="true">
+                        <span className={`traffic-arrow up${upActive ? ' active' : ''}`}>↑</span>
+                        <span className={`traffic-arrow down${downActive ? ' active' : ''}`}>↓</span>
+                      </span>
+                      <span className="account-plan">
+                        {account.plan} {stateLabel}
+                      </span>
+                    </div>
                   </div>
                   <div className="account-meta-row">
                     <span className="account-meta">

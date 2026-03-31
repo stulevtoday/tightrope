@@ -9,6 +9,8 @@ interface RouterPageProps {
   accounts: Account[];
   metrics: Map<string, RouteMetrics>;
   routedAccountId: string | null;
+  trafficNowMs: number;
+  trafficActiveWindowMs: number;
   selectedAccountId: string;
   selectedRouteId: string;
   selectedRoute: RouteRow;
@@ -36,6 +38,8 @@ export function RouterPage({
   accounts,
   metrics,
   routedAccountId,
+  trafficNowMs,
+  trafficActiveWindowMs,
   selectedAccountId,
   selectedRouteId,
   selectedRoute,
@@ -66,6 +70,8 @@ export function RouterPage({
           accounts={accounts}
           metrics={metrics}
           routedAccountId={routedAccountId}
+          trafficNowMs={trafficNowMs}
+          trafficActiveWindowMs={trafficActiveWindowMs}
           selectedAccountId={selectedAccountId}
           onSelectAccount={onSelectAccount}
           onOpenAddAccount={onOpenAddAccount}

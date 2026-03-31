@@ -159,7 +159,10 @@ export function filteredRows(
       return false;
     }
     if (!query) return true;
-    return [row.id, row.model, row.protocol, accountName, row.sessionId].join(' ').toLowerCase().includes(query);
+    return [row.id, row.model, row.protocol, accountName, row.sessionId, row.method ?? '', row.path ?? '', row.errorCode ?? '']
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
   });
 }
 
