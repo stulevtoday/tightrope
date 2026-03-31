@@ -11,7 +11,8 @@ namespace tightrope::sync::consensus::nuraft_backend {
 
 class Backend {
 public:
-    Backend(std::uint32_t node_id, std::vector<std::uint32_t> members, std::uint16_t port_base);
+    Backend(std::uint32_t node_id, std::vector<std::uint32_t> members, std::uint16_t port_base,
+            std::string storage_base_dir = "");
     ~Backend();
 
     Backend(const Backend&) = delete;

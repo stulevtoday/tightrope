@@ -1,10 +1,19 @@
 #include "server/runtime_test_utils.h"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <process.h>
+#else
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -14,9 +23,73 @@
 
 namespace tightrope::tests::server {
 
-std::uint16_t next_runtime_port() {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+namespace {
+
+#if defined(_WIN32)
+using SocketHandle = SOCKET;
+constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
+#else
+using SocketHandle = int;
+constexpr SocketHandle kInvalidSocket = -1;
+#endif
+
+bool ensure_network_stack() {
+#if defined(_WIN32)
+    static const bool initialized = []() {
+        WSADATA data{};
+        return ::WSAStartup(MAKEWORD(2, 2), &data) == 0;
+    }();
+    return initialized;
+#else
+    return true;
+#endif
+}
+
+void close_socket(const SocketHandle fd) {
+#if defined(_WIN32)
+    if (fd != kInvalidSocket) {
+        (void)::closesocket(fd);
+    }
+#else
     if (fd >= 0) {
+        (void)::close(fd);
+    }
+#endif
+}
+
+int current_pid() {
+#if defined(_WIN32)
+    return _getpid();
+#else
+    return static_cast<int>(::getpid());
+#endif
+}
+
+int set_env_var(const char* key, const char* value) {
+#if defined(_WIN32)
+    return ::_putenv_s(key, value);
+#else
+    return ::setenv(key, value, 1);
+#endif
+}
+
+int unset_env_var(const char* key) {
+#if defined(_WIN32)
+    return ::_putenv_s(key, "");
+#else
+    return ::unsetenv(key);
+#endif
+}
+
+} // namespace
+
+std::uint16_t next_runtime_port() {
+    if (!ensure_network_stack()) {
+        return 0;
+    }
+
+    SocketHandle fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd != kInvalidSocket) {
         sockaddr_in address{};
         std::memset(&address, 0, sizeof(address));
 #if defined(__APPLE__)
@@ -28,21 +101,25 @@ std::uint16_t next_runtime_port() {
 
         if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0) {
             sockaddr_in bound{};
+#if defined(_WIN32)
+            int bound_len = static_cast<int>(sizeof(bound));
+#else
             socklen_t bound_len = sizeof(bound);
+#endif
             if (::getsockname(fd, reinterpret_cast<sockaddr*>(&bound), &bound_len) == 0) {
                 const auto selected_port = static_cast<std::uint16_t>(ntohs(bound.sin_port));
-                ::close(fd);
+                close_socket(fd);
                 if (selected_port != 0) {
                     return selected_port;
                 }
             }
         }
-        ::close(fd);
+        close_socket(fd);
     }
 
     // Fallback for environments where ephemeral bind probing is unavailable.
     const auto fallback_seed = static_cast<std::uint16_t>(
-        40000 + (static_cast<std::uint16_t>(::getpid()) % static_cast<std::uint16_t>(20000))
+        40000 + (static_cast<std::uint16_t>(current_pid()) % static_cast<std::uint16_t>(20000))
     );
     static std::atomic<std::uint16_t> fallback_port{fallback_seed};
     return static_cast<std::uint16_t>(fallback_port.fetch_add(17));
@@ -64,15 +141,15 @@ EnvVarGuard::EnvVarGuard(const char* key) : key_(key) {
 
 EnvVarGuard::~EnvVarGuard() {
     if (original_.has_value()) {
-        (void)::setenv(key_.c_str(), original_->c_str(), 1);
+        (void)set_env_var(key_.c_str(), original_->c_str());
     } else {
-        (void)::unsetenv(key_.c_str());
+        (void)unset_env_var(key_.c_str());
     }
 }
 
 bool EnvVarGuard::set(const std::string_view value) const {
     const std::string copy(value);
-    return ::setenv(key_.c_str(), copy.c_str(), 1) == 0;
+    return set_env_var(key_.c_str(), copy.c_str()) == 0;
 }
 
 std::string send_raw_http_to_host(
@@ -81,6 +158,10 @@ std::string send_raw_http_to_host(
     const std::string_view request,
     const int max_reads
 ) {
+    if (!ensure_network_stack()) {
+        return {};
+    }
+
     addrinfo hints{};
     std::memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -93,30 +174,35 @@ std::string send_raw_http_to_host(
         return {};
     }
 
-    int fd = -1;
+    SocketHandle fd = kInvalidSocket;
     for (addrinfo* it = results; it != nullptr; it = it->ai_next) {
         fd = ::socket(it->ai_family, it->ai_socktype, it->ai_protocol);
-        if (fd < 0) {
+        if (fd == kInvalidSocket) {
             continue;
         }
         if (::connect(fd, it->ai_addr, it->ai_addrlen) == 0) {
             break;
         }
-        ::close(fd);
-        fd = -1;
+        close_socket(fd);
+        fd = kInvalidSocket;
     }
     ::freeaddrinfo(results);
 
-    if (fd < 0) {
+    if (fd == kInvalidSocket) {
         return {};
     }
 
     timeval timeout{};
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
+#if defined(_WIN32)
+    if (::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout)) != 0 ||
+        ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeout), sizeof(timeout)) != 0) {
+#else
     if (::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) != 0 ||
         ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0) {
-        ::close(fd);
+ #endif
+        close_socket(fd);
         return {};
     }
 
@@ -124,7 +210,7 @@ std::string send_raw_http_to_host(
     while (sent_total < request.size()) {
         const auto sent = ::send(fd, request.data() + sent_total, request.size() - sent_total, 0);
         if (sent < 0) {
-            ::close(fd);
+            close_socket(fd);
             return {};
         }
         sent_total += static_cast<std::size_t>(sent);
@@ -140,7 +226,7 @@ std::string send_raw_http_to_host(
         response.append(buffer, static_cast<std::size_t>(read));
     }
 
-    ::close(fd);
+    close_socket(fd);
     return response;
 }
 

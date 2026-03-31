@@ -20,6 +20,8 @@ inline constexpr std::string_view kMetaLogStartIndex = "log_start_index";
 inline constexpr std::string_view kMetaClusterConfig = "cluster_config";
 inline constexpr std::string_view kMetaServerState = "server_state";
 
+class SqliteRaftStorage;
+
 std::vector<std::uint32_t> normalize_members(std::vector<std::uint32_t> members);
 nuraft::ptr<nuraft::srv_config> clone_srv_config(const nuraft::srv_config& config);
 nuraft::ptr<nuraft::cluster_config> clone_cluster_config(const nuraft::cluster_config& config);
@@ -27,7 +29,7 @@ nuraft::ptr<nuraft::cluster_config> build_cluster_config(
     const std::vector<std::uint32_t>& members,
     std::uint16_t port_base
 );
-std::string make_storage_path(std::uint32_t node_id, std::uint16_t port_base);
+std::string make_storage_path(const std::string& base_dir, std::uint32_t node_id, std::uint16_t port_base);
 nuraft::ptr<nuraft::buffer> copy_blob_to_buffer(const void* blob, int size);
 nuraft::ptr<nuraft::log_entry> make_dummy_entry();
 
@@ -38,6 +40,8 @@ public:
 
 class InMemoryStateMachine final : public nuraft::state_machine {
 public:
+    InMemoryStateMachine(const nuraft::ptr<nuraft::cluster_config>& config,
+                         std::shared_ptr<SqliteRaftStorage> storage);
     explicit InMemoryStateMachine(const nuraft::ptr<nuraft::cluster_config>& config);
 
     nuraft::ptr<nuraft::buffer> commit(nuraft::ulong log_idx, nuraft::buffer& data) override;
@@ -53,6 +57,7 @@ private:
     nuraft::ptr<nuraft::snapshot> snapshot_;
     std::atomic<nuraft::ulong> commit_index_{0};
     std::vector<std::string> committed_payloads_;
+    std::shared_ptr<SqliteRaftStorage> storage_;
 };
 
 class SqliteRaftStorage {
@@ -81,6 +86,11 @@ public:
     void apply_pack(nuraft::ulong index, nuraft::buffer& pack);
     std::optional<nuraft::ptr<nuraft::buffer>> read_meta_blob(std::string_view key);
     bool write_meta_blob(std::string_view key, nuraft::buffer& value);
+
+    bool append_committed(nuraft::ulong log_idx, const void* data, std::size_t size);
+    std::size_t committed_count();
+    std::vector<std::string> load_all_committed();
+    std::optional<nuraft::ulong> max_committed_index();
 
 private:
     bool ensure_schema_locked();

@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <thread>
 #include <vector>
 
@@ -185,4 +186,102 @@ TEST_CASE("nuraft sqlite persistence keeps raft log across restart", "[sync][raf
     REQUIRE(node.last_log_index() >= *index);
 
     node.stop();
+}
+
+TEST_CASE("nuraft deterministic storage path survives object destruction and recreation", "[sync][raft][node][p0]") {
+    const auto port_base = next_port_base();
+    auto base_dir = std::filesystem::temp_directory_path() / "tightrope-test-restart-p0";
+    std::error_code ec;
+    std::filesystem::create_directories(base_dir, ec);
+    const auto base_dir_str = base_dir.string();
+
+    std::optional<std::uint64_t> committed_index;
+    {
+        RaftNode node(1, {}, port_base, base_dir_str);
+        if (!node.start()) {
+            std::filesystem::remove_all(base_dir, ec);
+            SKIP("NuRaft runtime unavailable on this environment");
+        }
+        std::vector<RaftNode*> nodes = {&node};
+        node.start_election();
+        auto* leader = wait_for_leader(nodes, kClusterStabilizationTimeout);
+        REQUIRE(leader == &node);
+
+        auto index = node.propose(make_data());
+        REQUIRE(index.has_value());
+        REQUIRE(wait_for_committed_index(nodes, *index, kClusterStabilizationTimeout));
+        committed_index = index;
+        REQUIRE(node.committed_entries() >= 1);
+        node.stop();
+    } // RaftNode destroyed here
+
+    {
+        // Brand new RaftNode with the same identity and storage dir
+        RaftNode node(1, {}, port_base, base_dir_str);
+        if (!node.start()) {
+            std::filesystem::remove_all(base_dir, ec);
+            SKIP("NuRaft runtime unavailable on this environment");
+        }
+        std::vector<RaftNode*> nodes = {&node};
+        node.start_election();
+        auto* leader = wait_for_leader(nodes, kClusterStabilizationTimeout);
+        REQUIRE(leader == &node);
+
+        // Log entries must survive across object destruction
+        REQUIRE(node.last_log_index() >= *committed_index);
+        // State machine committed entries must be recovered from SQLite
+        REQUIRE(node.committed_entries() >= 1);
+        node.stop();
+    }
+
+    std::filesystem::remove_all(base_dir, ec);
+}
+
+TEST_CASE("nuraft state machine persists and recovers committed entries", "[sync][raft][node][p0]") {
+    const auto port_base = next_port_base();
+    auto base_dir = std::filesystem::temp_directory_path() / "tightrope-test-sm-persist";
+    std::error_code ec;
+    std::filesystem::create_directories(base_dir, ec);
+    const auto base_dir_str = base_dir.string();
+
+    std::size_t first_run_count = 0;
+    {
+        RaftNode node(1, {}, port_base, base_dir_str);
+        if (!node.start()) {
+            std::filesystem::remove_all(base_dir, ec);
+            SKIP("NuRaft runtime unavailable on this environment");
+        }
+        std::vector<RaftNode*> nodes = {&node};
+        node.start_election();
+        auto* leader = wait_for_leader(nodes, kClusterStabilizationTimeout);
+        REQUIRE(leader == &node);
+
+        // Propose multiple entries
+        for (int i = 0; i < 3; ++i) {
+            auto idx = node.propose(make_data());
+            REQUIRE(idx.has_value());
+            REQUIRE(wait_for_committed_index(nodes, *idx, kClusterStabilizationTimeout));
+        }
+        first_run_count = node.committed_entries();
+        REQUIRE(first_run_count >= 3);
+        node.stop();
+    }
+
+    {
+        RaftNode node(1, {}, port_base, base_dir_str);
+        if (!node.start()) {
+            std::filesystem::remove_all(base_dir, ec);
+            SKIP("NuRaft runtime unavailable on this environment");
+        }
+        std::vector<RaftNode*> nodes = {&node};
+        node.start_election();
+        auto* leader = wait_for_leader(nodes, kClusterStabilizationTimeout);
+        REQUIRE(leader == &node);
+
+        // All committed entries must be recovered
+        REQUIRE(node.committed_entries() >= first_run_count);
+        node.stop();
+    }
+
+    std::filesystem::remove_all(base_dir, ec);
 }

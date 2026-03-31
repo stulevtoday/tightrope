@@ -236,7 +236,7 @@ bool SqliteRaftStorage::compact(const nuraft::ulong last_log_index) {
 
 bool SqliteRaftStorage::flush() {
     std::lock_guard<std::mutex> lock(mutex_);
-    return exec_locked("PRAGMA wal_checkpoint(PASSIVE);");
+    return exec_locked("PRAGMA wal_checkpoint(TRUNCATE);");
 }
 
 void SqliteRaftStorage::apply_pack(const nuraft::ulong index, nuraft::buffer& pack) {
@@ -295,7 +295,63 @@ bool SqliteRaftStorage::ensure_schema_locked() {
                "  term INTEGER NOT NULL,"
                "  payload BLOB NOT NULL"
                ");"
+           ) &&
+           exec_locked(
+               "CREATE TABLE IF NOT EXISTS raft_committed ("
+               "  log_idx INTEGER PRIMARY KEY,"
+               "  payload BLOB NOT NULL"
+               ");"
            );
+}
+
+bool SqliteRaftStorage::append_committed(const nuraft::ulong log_idx, const void* data, const std::size_t size) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    SqliteStatement stmt(db_,
+        "INSERT OR REPLACE INTO raft_committed(log_idx, payload) VALUES (?1, ?2);");
+    if (!stmt.ok() ||
+        sqlite3_bind_int64(stmt.get(), 1, static_cast<sqlite3_int64>(log_idx)) != SQLITE_OK ||
+        sqlite3_bind_blob(stmt.get(), 2, data, static_cast<int>(size), SQLITE_TRANSIENT) != SQLITE_OK) {
+        return false;
+    }
+    return sqlite3_step(stmt.get()) == SQLITE_DONE;
+}
+
+std::size_t SqliteRaftStorage::committed_count() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    SqliteStatement stmt(db_, "SELECT COUNT(*) FROM raft_committed;");
+    if (!stmt.ok() || sqlite3_step(stmt.get()) != SQLITE_ROW) {
+        return 0;
+    }
+    return static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
+}
+
+std::vector<std::string> SqliteRaftStorage::load_all_committed() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::string> payloads;
+    SqliteStatement stmt(db_, "SELECT payload FROM raft_committed ORDER BY log_idx ASC;");
+    if (!stmt.ok()) {
+        return payloads;
+    }
+    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        const auto* blob = sqlite3_column_blob(stmt.get(), 0);
+        const auto size = sqlite3_column_bytes(stmt.get(), 0);
+        if (blob != nullptr && size > 0) {
+            payloads.emplace_back(reinterpret_cast<const char*>(blob), static_cast<std::size_t>(size));
+        }
+    }
+    return payloads;
+}
+
+std::optional<nuraft::ulong> SqliteRaftStorage::max_committed_index() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    SqliteStatement stmt(db_, "SELECT MAX(log_idx) FROM raft_committed;");
+    if (!stmt.ok() || sqlite3_step(stmt.get()) != SQLITE_ROW) {
+        return std::nullopt;
+    }
+    if (sqlite3_column_type(stmt.get(), 0) == SQLITE_NULL) {
+        return std::nullopt;
+    }
+    return static_cast<nuraft::ulong>(sqlite3_column_int64(stmt.get(), 0));
 }
 
 bool SqliteRaftStorage::exec_locked(const char* sql) {

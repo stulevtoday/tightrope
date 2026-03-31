@@ -23,11 +23,13 @@ std::vector<std::uint32_t> build_members(const std::uint32_t node_id, const std:
 
 } // namespace
 
-RaftNode::RaftNode(const std::uint32_t node_id, std::vector<std::uint32_t> peers, const std::uint16_t port_base)
+RaftNode::RaftNode(const std::uint32_t node_id, std::vector<std::uint32_t> peers, const std::uint16_t port_base,
+                   std::string storage_base_dir)
     : node_id_(node_id),
       membership_(build_members(node_id, peers)),
       port_base_(port_base),
-      backend_(std::make_unique<nuraft_backend::Backend>(node_id_, membership_.members(), port_base_)) {}
+      backend_(std::make_unique<nuraft_backend::Backend>(
+          node_id_, membership_.members(), port_base_, std::move(storage_base_dir))) {}
 
 RaftNode::~RaftNode() {
     stop();

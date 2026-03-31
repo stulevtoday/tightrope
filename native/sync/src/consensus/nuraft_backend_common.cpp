@@ -53,10 +53,9 @@ nuraft::ptr<nuraft::cluster_config> build_cluster_config(
     return config;
 }
 
-std::string make_storage_path(const std::uint32_t node_id, const std::uint16_t port_base) {
-    static std::atomic<std::uint64_t> sequence{1};
+std::string make_storage_path(const std::string& base_dir, const std::uint32_t node_id, const std::uint16_t port_base) {
     std::error_code ec;
-    auto root = std::filesystem::temp_directory_path(ec);
+    auto root = base_dir.empty() ? std::filesystem::temp_directory_path(ec) : std::filesystem::path(base_dir);
     if (ec) {
         root = std::filesystem::path(".");
     }
@@ -64,9 +63,7 @@ std::string make_storage_path(const std::uint32_t node_id, const std::uint16_t p
     root /= "raft";
     std::filesystem::create_directories(root, ec);
 
-    const auto run_id = sequence.fetch_add(1);
-    const auto filename = "nuraft-" + std::to_string(port_base) + "-" + std::to_string(node_id) + "-" +
-                          std::to_string(run_id) + ".db";
+    const auto filename = "nuraft-" + std::to_string(port_base) + "-" + std::to_string(node_id) + ".db";
     return (root / filename).string();
 }
 

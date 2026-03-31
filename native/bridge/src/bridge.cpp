@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <charconv>
+#include <filesystem>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -195,7 +196,9 @@ bool Bridge::cluster_enable(const ClusterConfig& config) noexcept {
     ActiveCluster cluster{
         .config = config,
         .peer_manager = sync::discovery::PeerManager(config.cluster_name),
-        .raft_node = std::make_unique<sync::consensus::RaftNode>(config.site_id, std::vector<std::uint32_t>{}, config.sync_port),
+        .raft_node = std::make_unique<sync::consensus::RaftNode>(
+            config.site_id, std::vector<std::uint32_t>{}, config.sync_port,
+            config_.db_path.empty() ? std::string() : std::filesystem::path(config_.db_path).parent_path().string()),
         .next_peer_site_id = config.site_id + 1,
         .last_sync_at = std::nullopt,
     };

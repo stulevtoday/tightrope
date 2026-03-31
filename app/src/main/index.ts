@@ -16,6 +16,12 @@ const DEEP_LINK_PROTOCOL = 'tightrope';
 const pendingDeepLinks: string[] = [];
 let deepLinkDrainInFlight: Promise<void> | null = null;
 const isDevSession = Boolean(process.env.VITE_DEV_SERVER_URL);
+const DEV_RENDERER_RETRYABLE_ERRORS = new Set([
+  'ERR_CONNECTION_REFUSED',
+  'ERR_CONNECTION_RESET',
+  'ERR_CONNECTION_TIMED_OUT',
+  'ERR_NAME_NOT_RESOLVED',
+]);
 
 if (isDevSession) {
   const devUserDataPath = path.resolve(process.cwd(), '.electron-dev');
@@ -137,6 +143,47 @@ function enqueueDeepLink(url: string): void {
   void flushDeepLinks();
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function loadErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+  const maybeCode = (error as { code?: unknown }).code;
+  return typeof maybeCode === 'string' ? maybeCode : null;
+}
+
+async function loadRenderer(mainWindow: BrowserWindow, devServerUrl: string | undefined): Promise<void> {
+  if (!devServerUrl) {
+    const rendererPath = path.join(__dirname, '../renderer/index.html');
+    await mainWindow.loadFile(rendererPath);
+    return;
+  }
+
+  const maxAttempts = 30;
+  const retryDelayMs = 500;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await mainWindow.loadURL(devServerUrl);
+      return;
+    } catch (error) {
+      const code = loadErrorCode(error);
+      const retryable = code !== null && DEV_RENDERER_RETRYABLE_ERRORS.has(code);
+      if (!retryable || attempt === maxAttempts) {
+        throw error;
+      }
+      console.warn(
+        `[tightrope] renderer dev server unavailable (${code}); retrying (${attempt}/${maxAttempts}) in ${retryDelayMs}ms`,
+      );
+      await delay(retryDelayMs);
+    }
+  }
+}
+
 function registerTightropeProtocolClient(): void {
   if (process.defaultApp) {
     if (process.argv.length >= 2) {
@@ -191,12 +238,7 @@ app.whenReady().then(async () => {
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   try {
-    if (devServerUrl) {
-      await mainWindow.loadURL(devServerUrl);
-    } else {
-      const rendererPath = path.join(__dirname, '../renderer/index.html');
-      await mainWindow.loadFile(rendererPath);
-    }
+    await loadRenderer(mainWindow, devServerUrl);
   } catch (error) {
     console.error('[tightrope] renderer load failed', error);
   }

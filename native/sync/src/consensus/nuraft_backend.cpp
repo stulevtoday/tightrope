@@ -12,11 +12,12 @@ namespace tightrope::sync::consensus::nuraft_backend {
 
 class Backend::Impl {
 public:
-    Impl(std::uint32_t node_id, std::vector<std::uint32_t> members, std::uint16_t port_base)
+    Impl(std::uint32_t node_id, std::vector<std::uint32_t> members, std::uint16_t port_base,
+         std::string storage_base_dir)
         : node_id_(node_id),
           members_(internal::normalize_members(std::move(members))),
           port_base_(port_base),
-          storage_path_(internal::make_storage_path(node_id, port_base)) {}
+          storage_path_(internal::make_storage_path(storage_base_dir, node_id, port_base)) {}
 
     std::uint32_t node_id_ = 0;
     std::vector<std::uint32_t> members_;
@@ -49,8 +50,9 @@ std::string members_to_string(const std::vector<std::uint32_t>& members) {
 
 } // namespace
 
-Backend::Backend(const std::uint32_t node_id, std::vector<std::uint32_t> members, const std::uint16_t port_base)
-    : impl_(new Impl(node_id, std::move(members), port_base)) {}
+Backend::Backend(const std::uint32_t node_id, std::vector<std::uint32_t> members, const std::uint16_t port_base,
+                 std::string storage_base_dir)
+    : impl_(new Impl(node_id, std::move(members), port_base, std::move(storage_base_dir))) {}
 
 Backend::~Backend() {
     stop();
@@ -84,7 +86,7 @@ bool Backend::start() {
     }
 
     auto log_store = nuraft::cs_new<internal::SqliteLogStore>(impl_->storage_);
-    impl_->state_machine_ = nuraft::cs_new<internal::InMemoryStateMachine>(config);
+    impl_->state_machine_ = nuraft::cs_new<internal::InMemoryStateMachine>(config, impl_->storage_);
     impl_->state_manager_ =
         nuraft::cs_new<internal::SqliteStateManager>(impl_->node_id_, config, log_store, impl_->storage_);
     impl_->logger_ = nuraft::cs_new<internal::NoopLogger>();

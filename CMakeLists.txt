@@ -124,27 +124,7 @@ file(GLOB_RECURSE TIGHTROPE_SOURCES
   native/sync/*.cpp
 )
 
-file(GLOB_RECURSE TIGHTROPE_NATIVE_DIR_CANDIDATES LIST_DIRECTORIES true
-  ${CMAKE_SOURCE_DIR}/native/*
-)
-set(TIGHTROPE_NATIVE_INCLUDE_DIRS_INTERNAL "")
-foreach(path IN LISTS TIGHTROPE_NATIVE_DIR_CANDIDATES)
-  if(IS_DIRECTORY "${path}" AND path MATCHES "/include(/.*)?$")
-    list(APPEND TIGHTROPE_NATIVE_INCLUDE_DIRS_INTERNAL "${path}")
-  endif()
-endforeach()
-list(REMOVE_DUPLICATES TIGHTROPE_NATIVE_INCLUDE_DIRS_INTERNAL)
-
-add_library(tightrope-core SHARED ${TIGHTROPE_SOURCES})
-
-target_include_directories(tightrope-core PRIVATE
-  ${CMAKE_SOURCE_DIR}/native
-  ${TIGHTROPE_NATIVE_INCLUDE_DIRS_INTERNAL}
-  ${CMAKE_SOURCE_DIR}/vendor
-  ${TIGHTROPE_NODE_INCLUDE_DIRS}
-)
-
-target_link_libraries(tightrope-core PRIVATE
+set(TIGHTROPE_COMMON_LINK_LIBS
   ${TIGHTROPE_NURAFT_TARGET}
   unofficial::uwebsockets::uwebsockets
   MbedTLS::mbedtls MbedTLS::mbedcrypto MbedTLS::mbedx509
@@ -159,6 +139,40 @@ target_link_libraries(tightrope-core PRIVATE
   $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>
   CURL::libcurl
   OpenSSL::SSL OpenSSL::Crypto
+)
+if(WIN32)
+  list(APPEND TIGHTROPE_COMMON_LINK_LIBS ws2_32)
+endif()
+if(WIN32)
+  list(APPEND TIGHTROPE_COMMON_LINK_LIBS ws2_32)
+endif()
+
+file(GLOB_RECURSE TIGHTROPE_NATIVE_DIR_CANDIDATES LIST_DIRECTORIES true
+  ${CMAKE_SOURCE_DIR}/native/*
+)
+set(TIGHTROPE_NATIVE_INCLUDE_DIRS_INTERNAL "")
+foreach(path IN LISTS TIGHTROPE_NATIVE_DIR_CANDIDATES)
+  if(IS_DIRECTORY "${path}" AND path MATCHES "/include(/.*)?$")
+    list(APPEND TIGHTROPE_NATIVE_INCLUDE_DIRS_INTERNAL "${path}")
+  endif()
+endforeach()
+list(REMOVE_DUPLICATES TIGHTROPE_NATIVE_INCLUDE_DIRS_INTERNAL)
+
+add_library(tightrope-core SHARED ${TIGHTROPE_SOURCES})
+
+if(CMAKE_JS_SRC)
+  target_sources(tightrope-core PRIVATE ${CMAKE_JS_SRC})
+endif()
+
+target_include_directories(tightrope-core PRIVATE
+  ${CMAKE_SOURCE_DIR}/native
+  ${TIGHTROPE_NATIVE_INCLUDE_DIRS_INTERNAL}
+  ${CMAKE_SOURCE_DIR}/vendor
+  ${TIGHTROPE_NODE_INCLUDE_DIRS}
+)
+
+target_link_libraries(tightrope-core PRIVATE
+  ${TIGHTROPE_COMMON_LINK_LIBS}
   ${TIGHTROPE_NODE_LIBS}
 )
 
@@ -173,6 +187,39 @@ if(BUILD_TESTING)
   file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/native/tests/*.cpp
   )
+  set(POSIX_APPLE_ONLY_TEST_SOURCES
+    ${CMAKE_SOURCE_DIR}/native/tests/config/config_loader_test.cpp
+    ${CMAKE_SOURCE_DIR}/native/tests/db/migration_runner_test.cpp
+    ${CMAKE_SOURCE_DIR}/native/tests/integration/proxy/proxy_default_transport_integration_test.cpp
+    ${CMAKE_SOURCE_DIR}/native/tests/integration/proxy/proxy_upstream_transport_test.cpp
+    ${CMAKE_SOURCE_DIR}/native/tests/integration/sync/journal_sync_test.cpp
+    ${CMAKE_SOURCE_DIR}/native/tests/integration/sync/persistent_journal_test.cpp
+    ${CMAKE_SOURCE_DIR}/native/tests/integration/sync/sync_engine_test.cpp
+    ${CMAKE_SOURCE_DIR}/native/tests/integration/sync/sync_schema_test.cpp
+    ${CMAKE_SOURCE_DIR}/native/tests/server/settings_controller_test.cpp
+    ${CMAKE_SOURCE_DIR}/native/tests/unit/logging/quill_logger_test.cpp
+  )
+  if(APPLE)
+    # Keep POSIX-only tests enabled on Apple platforms.
+  else()
+    list(REMOVE_ITEM TEST_SOURCES ${POSIX_APPLE_ONLY_TEST_SOURCES})
+  endif()
+
+  set(TIGHTROPE_TESTABLE_SOURCES ${TIGHTROPE_SOURCES})
+  list(REMOVE_ITEM TIGHTROPE_TESTABLE_SOURCES
+    ${CMAKE_SOURCE_DIR}/native/bridge/src/addon.cpp
+    ${CMAKE_SOURCE_DIR}/native/bridge/src/addon_bindings_support.cpp
+  )
+  add_library(tightrope-core-testlib STATIC ${TIGHTROPE_TESTABLE_SOURCES})
+  target_include_directories(tightrope-core-testlib PRIVATE
+    ${CMAKE_SOURCE_DIR}/native
+    ${TIGHTROPE_NATIVE_INCLUDE_DIRS_INTERNAL}
+    ${CMAKE_SOURCE_DIR}/vendor
+  )
+  target_link_libraries(tightrope-core-testlib PUBLIC
+    ${TIGHTROPE_COMMON_LINK_LIBS}
+  )
+
   add_executable(tightrope-tests ${TEST_SOURCES})
   target_include_directories(tightrope-tests PRIVATE
     ${CMAKE_SOURCE_DIR}/native
@@ -181,7 +228,7 @@ if(BUILD_TESTING)
   )
   target_link_libraries(tightrope-tests PRIVATE
     Catch2::Catch2WithMain
-    tightrope-core
+    tightrope-core-testlib
   )
 
   add_executable(tightrope-contract-capture

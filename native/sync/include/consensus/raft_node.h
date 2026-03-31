@@ -41,7 +41,8 @@ struct LogEntryData {
 
 class RaftNode {
 public:
-    RaftNode(std::uint32_t node_id, std::vector<std::uint32_t> peers, std::uint16_t port_base = 26000);
+    RaftNode(std::uint32_t node_id, std::vector<std::uint32_t> peers, std::uint16_t port_base = 26000,
+             std::string storage_base_dir = "");
     ~RaftNode();
 
     RaftNode(const RaftNode&) = delete;

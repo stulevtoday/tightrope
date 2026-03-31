@@ -124,6 +124,56 @@ TEST_CASE("sync schema does NOT add HLC columns to non-replicated tables", "[syn
     std::remove(path.c_str());
 }
 
+TEST_CASE("ensure_sync_schema sets WAL mode and synchronous FULL", "[sync][schema][integration][p0]") {
+    const auto path = make_temp_db_path();
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open_v2(path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
+
+    create_minimal_app_tables(db);
+    REQUIRE(tightrope::sync::ensure_sync_schema(db));
+
+    // Verify WAL journal mode
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db, "PRAGMA journal_mode;", -1, &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    std::string mode(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+    sqlite3_finalize(stmt);
+    REQUIRE(mode == "wal");
+
+    // Verify synchronous=FULL (value 2)
+    REQUIRE(sqlite3_prepare_v2(db, "PRAGMA synchronous;", -1, &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    const int sync_val = sqlite3_column_int(stmt, 0);
+    sqlite3_finalize(stmt);
+    REQUIRE(sync_val == 2);
+
+    sqlite3_close(db);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("ensure_sync_durability is idempotent", "[sync][schema][integration][p0]") {
+    const auto path = make_temp_db_path();
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open_v2(path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
+
+    REQUIRE(tightrope::sync::ensure_sync_durability(db));
+    REQUIRE(tightrope::sync::ensure_sync_durability(db));
+
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db, "PRAGMA journal_mode;", -1, &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    std::string mode(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+    sqlite3_finalize(stmt);
+    REQUIRE(mode == "wal");
+
+    sqlite3_close(db);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("ensure_sync_durability rejects null db", "[sync][schema][integration][p0]") {
+    REQUIRE_FALSE(tightrope::sync::ensure_sync_durability(nullptr));
+}
+
 TEST_CASE("sync schema is idempotent", "[sync][schema][integration]") {
     const auto path = make_temp_db_path();
     sqlite3* db = nullptr;

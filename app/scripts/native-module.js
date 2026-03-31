@@ -18,6 +18,32 @@ const nativeModuleCandidates = [
   path.join(appDir, 'build', 'tightrope-core.node'),
 ];
 
+function metadataPathFor(modulePath) {
+  return `${modulePath}.buildinfo.json`;
+}
+
+function readBuildMetadata(modulePath) {
+  const metadataPath = metadataPathFor(modulePath);
+  if (!fs.existsSync(metadataPath)) {
+    return null;
+  }
+  try {
+    const raw = fs.readFileSync(metadataPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeBuildMetadata(modulePath, metadata) {
+  const metadataPath = metadataPathFor(modulePath);
+  fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+}
+
 function walkFiles(rootDir, filter, out = []) {
   if (!fs.existsSync(rootDir)) {
     return out;
@@ -118,6 +144,29 @@ function readElectronVersion() {
   };
 }
 
+function expectedBuildMetadata() {
+  const { version } = readElectronVersion();
+  return {
+    runtime: 'electron',
+    runtimeVersion: version,
+    platform: process.platform,
+    arch: process.arch,
+  };
+}
+
+function metadataMatches(metadata, expected) {
+  if (!metadata || typeof metadata !== 'object') {
+    return false;
+  }
+
+  return (
+    metadata.runtime === expected.runtime &&
+    metadata.runtimeVersion === expected.runtimeVersion &&
+    metadata.platform === expected.platform &&
+    metadata.arch === expected.arch
+  );
+}
+
 function buildSpawnEnv() {
   const env = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -134,6 +183,7 @@ function buildSpawnEnv() {
 
 function runBuild() {
   const { version: electronVersion } = readElectronVersion();
+  const metadata = expectedBuildMetadata();
   const { triplet, overlayTriplets } = resolveTriplet();
   const cmakeJsCli = path.join(appDir, 'node_modules', 'cmake-js', 'bin', 'cmake-js');
 
@@ -192,6 +242,10 @@ function runBuild() {
     throw new Error('Build succeeded but tightrope-core.node was not found in expected output paths.');
   }
 
+  for (const modulePath of builtOutputs) {
+    writeBuildMetadata(modulePath, metadata);
+  }
+
   console.log(`[native] Output: ${builtOutputs[0]}`);
 }
 
@@ -199,6 +253,19 @@ function shouldRebuild() {
   const outputs = existingModulePaths();
   if (outputs.length === 0) {
     return { rebuild: true, reason: 'native module is missing' };
+  }
+
+  const expectedMetadata = expectedBuildMetadata();
+  const hasMatchingMetadata = outputs.some((modulePath) => {
+    const metadata = readBuildMetadata(modulePath);
+    return metadataMatches(metadata, expectedMetadata);
+  });
+
+  if (!hasMatchingMetadata) {
+    return {
+      rebuild: true,
+      reason: 'native module metadata is missing or does not match current Electron platform/runtime',
+    };
   }
 
   const { packagePath: electronPkgPath } = readElectronVersion();

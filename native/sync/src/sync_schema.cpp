@@ -88,12 +88,34 @@ bool ensure_column(sqlite3* db, const std::string& table_name, const std::string
 
 } // namespace
 
+bool ensure_sync_durability(sqlite3* db) {
+    if (db == nullptr) {
+        log_sync_event(SyncLogLevel::Warning, "sync_schema", "durability_rejected_null_db");
+        return false;
+    }
+    log_sync_event(SyncLogLevel::Debug, "sync_schema", "ensure_durability_begin");
+
+    if (!exec_sql(db, "PRAGMA journal_mode=WAL;")) {
+        return false;
+    }
+    if (!exec_sql(db, "PRAGMA synchronous=FULL;")) {
+        return false;
+    }
+
+    log_sync_event(SyncLogLevel::Info, "sync_schema", "ensure_durability_complete");
+    return true;
+}
+
 bool ensure_sync_schema(sqlite3* db) {
     if (db == nullptr) {
         log_sync_event(SyncLogLevel::Warning, "sync_schema", "ensure_rejected_null_db");
         return false;
     }
     log_sync_event(SyncLogLevel::Debug, "sync_schema", "ensure_begin");
+
+    if (!ensure_sync_durability(db)) {
+        return false;
+    }
 
     if (!exec_sql(
             db,
