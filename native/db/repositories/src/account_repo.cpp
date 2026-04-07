@@ -29,6 +29,10 @@ CREATE TABLE IF NOT EXISTS accounts (
     refresh_token_encrypted BLOB,
     id_token_encrypted BLOB,
     last_refresh TEXT,
+    token_refresh_last_success_at_ms INTEGER,
+    token_refresh_next_due_at_ms INTEGER,
+    token_refresh_needs_attention INTEGER NOT NULL DEFAULT 0,
+    token_refresh_last_error TEXT,
     deactivation_reason TEXT,
     status TEXT NOT NULL DEFAULT 'active',
     quota_primary_percent INTEGER,
@@ -50,6 +54,13 @@ constexpr const char* kAddAccessTokenSql = "ALTER TABLE accounts ADD COLUMN acce
 constexpr const char* kAddRefreshTokenSql = "ALTER TABLE accounts ADD COLUMN refresh_token_encrypted BLOB;";
 constexpr const char* kAddIdTokenSql = "ALTER TABLE accounts ADD COLUMN id_token_encrypted BLOB;";
 constexpr const char* kAddLastRefreshSql = "ALTER TABLE accounts ADD COLUMN last_refresh TEXT;";
+constexpr const char* kAddTokenRefreshLastSuccessAtMsSql =
+    "ALTER TABLE accounts ADD COLUMN token_refresh_last_success_at_ms INTEGER;";
+constexpr const char* kAddTokenRefreshNextDueAtMsSql =
+    "ALTER TABLE accounts ADD COLUMN token_refresh_next_due_at_ms INTEGER;";
+constexpr const char* kAddTokenRefreshNeedsAttentionSql =
+    "ALTER TABLE accounts ADD COLUMN token_refresh_needs_attention INTEGER NOT NULL DEFAULT 0;";
+constexpr const char* kAddTokenRefreshLastErrorSql = "ALTER TABLE accounts ADD COLUMN token_refresh_last_error TEXT;";
 constexpr const char* kAddDeactivationReasonSql = "ALTER TABLE accounts ADD COLUMN deactivation_reason TEXT;";
 constexpr const char* kAddQuotaPrimaryPercentSql = "ALTER TABLE accounts ADD COLUMN quota_primary_percent INTEGER;";
 constexpr const char* kAddQuotaSecondaryPercentSql = "ALTER TABLE accounts ADD COLUMN quota_secondary_percent INTEGER;";
@@ -94,6 +105,26 @@ bool ensure_schema(SQLite::Database& db) noexcept {
            sqlite_repo_utils::ensure_column(db, "accounts", "refresh_token_encrypted", kAddRefreshTokenSql) &&
            sqlite_repo_utils::ensure_column(db, "accounts", "id_token_encrypted", kAddIdTokenSql) &&
            sqlite_repo_utils::ensure_column(db, "accounts", "last_refresh", kAddLastRefreshSql) &&
+           sqlite_repo_utils::ensure_column(
+               db,
+               "accounts",
+               "token_refresh_last_success_at_ms",
+               kAddTokenRefreshLastSuccessAtMsSql) &&
+           sqlite_repo_utils::ensure_column(
+               db,
+               "accounts",
+               "token_refresh_next_due_at_ms",
+               kAddTokenRefreshNextDueAtMsSql) &&
+           sqlite_repo_utils::ensure_column(
+               db,
+               "accounts",
+               "token_refresh_needs_attention",
+               kAddTokenRefreshNeedsAttentionSql) &&
+           sqlite_repo_utils::ensure_column(
+               db,
+               "accounts",
+               "token_refresh_last_error",
+               kAddTokenRefreshLastErrorSql) &&
            sqlite_repo_utils::ensure_column(db, "accounts", "deactivation_reason", kAddDeactivationReasonSql) &&
            sqlite_repo_utils::ensure_column(db, "accounts", "quota_primary_percent", kAddQuotaPrimaryPercentSql) &&
            sqlite_repo_utils::ensure_column(db, "accounts", "quota_secondary_percent", kAddQuotaSecondaryPercentSql) &&

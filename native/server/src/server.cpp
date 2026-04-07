@@ -13,6 +13,7 @@
 #include "internal/async_executor.h"
 #include "internal/proxy_runtime_control.h"
 #include "internal/server_routes.h"
+#include "internal/token_refresh_scheduler.h"
 
 namespace tightrope::server {
 class Runtime::Impl {
@@ -25,6 +26,7 @@ public:
     bool running = false;
     uWS::Loop* loop = nullptr;
     uWS::App* app = nullptr;
+    std::jthread token_refresh_worker;
 };
 
 Runtime::Runtime() noexcept : started_at_(Clock::now()), impl_(std::make_unique<Impl>()) {}
@@ -131,6 +133,14 @@ bool Runtime::start(const RuntimeConfig& config) noexcept {
     }
 
     started_at_ = Clock::now();
+    const auto refresh_config = internal::token_refresh::load_scheduler_config_from_env();
+    if (impl_->token_refresh_worker.joinable()) {
+        impl_->token_refresh_worker.request_stop();
+        impl_->token_refresh_worker.join();
+    }
+    impl_->token_refresh_worker = std::jthread([refresh_config](const std::stop_token stop_token) {
+        internal::token_refresh::run_scheduler_loop(stop_token, refresh_config);
+    });
     core::logging::log_event(core::logging::LogLevel::Info, "runtime", "server", "start_complete");
     return true;
 }
@@ -150,8 +160,16 @@ bool Runtime::stop() noexcept {
     internal::stop_async_executor_accepting();
     static_cast<void>(internal::wait_async_executor_idle(std::chrono::seconds(5)));
 
+    if (impl_->token_refresh_worker.joinable()) {
+        impl_->token_refresh_worker.request_stop();
+    }
+
     if (loop != nullptr && app != nullptr) {
         loop->defer([app] { app->close(); });
+    }
+
+    if (impl_->token_refresh_worker.joinable()) {
+        impl_->token_refresh_worker.join();
     }
 
     if (impl_->worker.joinable()) {
