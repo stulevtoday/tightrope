@@ -26,6 +26,7 @@
     "libuv",
     "openssl",
     "curl",
-    "catch2"
+    "catch2",
+    { "name": "libgnutls", "platform": "!windows" }
   ]
 }
