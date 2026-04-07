@@ -101,8 +101,8 @@ find_package(unofficial-uwebsockets CONFIG REQUIRED)
 find_package(MbedTLS CONFIG REQUIRED)
 find_package(Boost REQUIRED COMPONENTS log log_setup asio system uuid)
 find_package(sqlcipher CONFIG REQUIRED)
-find_package(PkgConfig REQUIRED)
-if(NOT TARGET PkgConfig::sqlcipher)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND AND NOT TARGET PkgConfig::sqlcipher)
   pkg_check_modules(sqlcipher REQUIRED IMPORTED_TARGET GLOBAL sqlcipher)
 endif()
 find_package(SQLiteCpp CONFIG REQUIRED)
@@ -115,20 +115,22 @@ find_package(libuv CONFIG REQUIRED)
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED)
 
-set(OPENDHT_DOWNLOAD_DEPS OFF CACHE BOOL "" FORCE)
-set(OPENDHT_USE_PKGCONFIG ON CACHE BOOL "" FORCE)
-set(OPENDHT_TOOLS OFF CACHE BOOL "" FORCE)
-set(OPENDHT_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(OPENDHT_PROXY_SERVER OFF CACHE BOOL "" FORCE)
-set(OPENDHT_PROXY_CLIENT OFF CACHE BOOL "" FORCE)
-set(OPENDHT_HTTP OFF CACHE BOOL "" FORCE)
-set(OPENDHT_PEER_DISCOVERY OFF CACHE BOOL "" FORCE)
-set(OPENDHT_INDEX OFF CACHE BOOL "" FORCE)
-set(OPENDHT_PYTHON OFF CACHE BOOL "" FORCE)
-set(OPENDHT_C OFF CACHE BOOL "" FORCE)
-set(OPENDHT_CPACK OFF CACHE BOOL "" FORCE)
-set(OPENDHT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/opendht EXCLUDE_FROM_ALL)
+if(NOT WIN32)
+  set(OPENDHT_DOWNLOAD_DEPS OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_USE_PKGCONFIG ON CACHE BOOL "" FORCE)
+  set(OPENDHT_TOOLS OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_PROXY_SERVER OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_PROXY_CLIENT OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_HTTP OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_PEER_DISCOVERY OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_INDEX OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_PYTHON OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_C OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_CPACK OFF CACHE BOOL "" FORCE)
+  set(OPENDHT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/vendor/opendht EXCLUDE_FROM_ALL)
+endif()
 
 set(TIGHTROPE_HAS_ZSTD_DECOMPRESSION OFF)
 set(TIGHTROPE_ZSTD_INCLUDE_DIRS "")
@@ -199,11 +201,16 @@ file(GLOB_RECURSE TIGHTROPE_SOURCES CONFIGURE_DEPENDS
   native/balancer/*.cpp
   native/proxy/*.cpp
   native/auth/*.cpp
-  native/p2p/*.cpp
   native/usage/*.cpp
   native/server/*.cpp
   native/sync/*.cpp
 )
+if(NOT WIN32)
+  file(GLOB_RECURSE TIGHTROPE_P2P_SOURCES CONFIGURE_DEPENDS
+    native/p2p/*.cpp
+  )
+  list(APPEND TIGHTROPE_SOURCES ${TIGHTROPE_P2P_SOURCES})
+endif()
 
 set(TIGHTROPE_SYNC_EVENT_EMITTER_NODE_SOURCE
   ${CMAKE_SOURCE_DIR}/native/sync/src/sync_event_emitter.cpp
@@ -232,7 +239,6 @@ set(TIGHTROPE_COMMON_LINK_LIBS
   unofficial-sodium::sodium
   quill::quill
   tomlplusplus::tomlplusplus
-  opendht
   $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>
   CURL::libcurl
   OpenSSL::SSL OpenSSL::Crypto
@@ -243,8 +249,8 @@ endif()
 if(TIGHTROPE_BROTLI_LINK_LIB)
   list(APPEND TIGHTROPE_COMMON_LINK_LIBS ${TIGHTROPE_BROTLI_LINK_LIB})
 endif()
-if(WIN32)
-  list(APPEND TIGHTROPE_COMMON_LINK_LIBS ws2_32)
+if(NOT WIN32)
+  list(APPEND TIGHTROPE_COMMON_LINK_LIBS opendht)
 endif()
 if(WIN32)
   list(APPEND TIGHTROPE_COMMON_LINK_LIBS ws2_32)

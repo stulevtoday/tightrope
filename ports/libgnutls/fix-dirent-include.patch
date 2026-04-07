@@ -1,0 +1,24 @@
+diff --git a/lib/x509/verify-high2.c b/lib/x509/verify-high2.c
+--- a/lib/x509/verify-high2.c
++++ b/lib/x509/verify-high2.c
+@@ -37,16 +37,18 @@
+ #include "pkcs11_int.h"
+ #include "urls.h"
+
+-#include <dirent.h>
+-
+ #if !defined(_DIRENT_HAVE_D_TYPE) && !defined(__native_client__)
+ #ifdef DT_UNKNOWN
+ #define _DIRENT_HAVE_D_TYPE
+ #endif
+ #endif
+
+ #ifdef _WIN32
+ #include <tchar.h>
+ #endif
++
++#if !defined(_WIN32) || !defined(_UNICODE)
++#include <dirent.h>
++#endif
+
+ /* Convenience functions for verify-high functionality
