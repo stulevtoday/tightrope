@@ -265,6 +265,29 @@ function buildSpawnEnv() {
   return env;
 }
 
+function pruneStaleWindowsBuildDir(buildDir) {
+  // On Windows, an aborted cmake-js configure can leave behind a CMakeCache.txt
+  // without the generated *.vcxproj files. cmake-js then skips configure on the
+  // next run and MSBuild fails with "MSB1009: Project file does not exist".
+  // Detect that state and wipe the directory so configure runs from scratch.
+  if (process.platform !== 'win32') {
+    return;
+  }
+  if (!fs.existsSync(buildDir)) {
+    return;
+  }
+  const cachePath = path.join(buildDir, 'CMakeCache.txt');
+  if (!fs.existsSync(cachePath)) {
+    return;
+  }
+  const hasVcxproj = walkFiles(buildDir, (fullPath) => /\.vcxproj$/i.test(fullPath)).length > 0;
+  if (hasVcxproj) {
+    return;
+  }
+  console.log(`[native] stale build directory detected (no .vcxproj); removing ${buildDir}`);
+  fs.rmSync(buildDir, { recursive: true, force: true });
+}
+
 function runBuild() {
   const { version: electronVersion } = readElectronVersion();
   const metadata = expectedBuildMetadata();
@@ -274,6 +297,8 @@ function runBuild() {
   if (!fs.existsSync(cmakeJsCli)) {
     throw new Error('cmake-js is not installed. Run `npm --prefix app install` first.');
   }
+
+  pruneStaleWindowsBuildDir(path.resolve(appDir, cmakeOutDir));
 
   const toolchainFileFromEnv = process.env.CMAKE_TOOLCHAIN_FILE;
   const defaultToolchainPath = path.join(repoRoot, 'vcpkg', 'scripts', 'buildsystems', 'vcpkg.cmake');
