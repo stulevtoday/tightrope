@@ -11,7 +11,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(WIN32)
-  add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+  # 0x0A00 = Windows 10; needed by firewall_repo.cpp and other code that
+  # pulls in Win32 headers requiring an explicit target version.
+  add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
 endif()
 
 # vcpkg integrates via CMAKE_TOOLCHAIN_FILE (set by cmake-js or CLI)

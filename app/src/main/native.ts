@@ -216,7 +216,13 @@ function packagedNativeModuleCandidates(): string[] {
 }
 
 function nativeModuleCandidates(): string[] {
-  const buildMode = resolveNativeBuildMode();
+  const requestedMode = resolveNativeBuildMode();
+  // On Windows the vcpkg graph (nuraft, SQLiteCpp, libuv, ...) does not produce a
+  // debug variant that matches a Debug-config tightrope-core, so the builder aliases
+  // debug -> release on win32. Mirror that here, otherwise the loader would look in
+  // build-electron-debug/Debug and fail to find the module.
+  const buildMode: 'debug' | 'release' =
+    process.platform === 'win32' ? 'release' : requestedMode;
   // IMPORTANT: These paths must mirror app/scripts/native-module.js.
   // If debug/release paths diverge between builder and loader, Electron startup can crash.
   const buildDir = buildMode === 'debug' ? 'build-electron-debug' : 'build';
@@ -334,10 +340,29 @@ function loadNative(): NativeModule {
     }
   }
 
+  // In dev mode, falling back to stubs silently masks real failures (e.g. the
+  // .node file is locked by a stale electron.exe on Windows). The UI looks like
+  // it loads but every runtime request produces ECONNREFUSED because no real
+  // HTTP server ever starts. Crash loudly instead so the developer sees it.
+  const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
   if (loadError) {
-    console.warn('[tightrope] native module load failed — running with stubs', loadError);
+    const message =
+      '[tightrope] native module load failed — running with stubs. ' +
+      'If this is Windows and the cause is "being used by another process", a stale ' +
+      'electron.exe from a previous dev run is holding tightrope-core.node. ' +
+      'Kill it (Task Manager, or `taskkill /F /IM electron.exe`) and retry.';
+    if (isDev) {
+      console.error(message, loadError);
+      throw loadError;
+    }
+    console.warn(message, loadError);
   } else {
-    console.warn('[tightrope] native module not found — running with stubs');
+    const message = '[tightrope] native module not found — running with stubs';
+    if (isDev) {
+      console.error(message);
+      throw new Error('native module not found');
+    }
+    console.warn(message);
   }
 
   return createNativeStubs();

@@ -307,29 +307,45 @@
       }
 
       .titlebar-action {
-        width: 24px;
-        height: 24px;
+        height: 22px;
+        padding: 0 0.6rem 0 0.5rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
         border-radius: 999px;
-        border: 1px solid var(--border-strong);
-        background:
-          radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.16), transparent 62%),
-          linear-gradient(135deg, color-mix(in srgb, var(--accent) 72%, #45a3f3 28%), color-mix(in srgb, var(--surface-2) 58%, var(--accent) 42%));
-        color: #f6fbff;
-        display: inline-grid;
-        place-items: center;
-        font-size: 13px;
+        border: 1px solid var(--border);
+        background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
         line-height: 1;
         cursor: pointer;
-        box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
-          0 5px 14px color-mix(in srgb, var(--accent) 32%, transparent);
         -webkit-app-region: no-drag;
-        transition: transform var(--dur-fast) var(--ease-out-quint), box-shadow var(--dur-mid) var(--ease-out-quart);
+        transition:
+          background var(--dur-fast) var(--ease-out-quart),
+          border-color var(--dur-fast) var(--ease-out-quart),
+          color var(--dur-fast) var(--ease-out-quart);
+      }
+
+      .titlebar-action svg {
+        flex-shrink: 0;
+        color: color-mix(in srgb, var(--accent) 85%, var(--text-secondary) 15%);
+        transition: color var(--dur-fast) var(--ease-out-quart);
+      }
+
+      .titlebar-action-label {
+        display: inline-block;
       }
 
       .titlebar-action:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 44%, transparent),
-          0 7px 16px color-mix(in srgb, var(--accent) 44%, transparent);
+        background: color-mix(in srgb, var(--surface-2) 90%, var(--accent) 10%);
+        border-color: color-mix(in srgb, var(--border-strong) 70%, var(--accent) 30%);
+        color: var(--text-primary);
+      }
+
+      .titlebar-action:hover svg {
+        color: var(--accent);
       }
 
       .titlebar-action:focus-visible {

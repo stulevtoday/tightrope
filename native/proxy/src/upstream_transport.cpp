@@ -26,8 +26,18 @@
 #include <curl/curl.h>
 #include <glaze/glaze.hpp>
 #include <openssl/ssl.h>
+#include <openssl/x509.h>
 #if TIGHTROPE_HAS_ZSTD_DECOMPRESSION
 #include <zstd.h>
+#endif
+
+#ifdef _WIN32
+// Windows: OpenSSL has no default system cert path, so set_default_verify_paths()
+// leaves the trust store empty and every TLS handshake fails with
+// "unable to get local issuer certificate". Pull roots from the Windows cert store.
+#include <windows.h>
+#include <wincrypt.h>
+#pragma comment(lib, "crypt32.lib")
 #endif
 
 #include "internal/proxy_error_policy.h"
@@ -57,6 +67,46 @@ constexpr std::string_view kUserAgent = "tightrope-native/0.1";
 constexpr std::size_t kMaxUpstreamResponseBytes = 256ULL * 1024 * 1024;
 // Maximum bytes for a single WebSocket frame from upstream.
 constexpr std::size_t kMaxUpstreamFrameBytes = 32ULL * 1024 * 1024;
+
+// On Windows, supplement OpenSSL's (empty) default verify store with roots from
+// the Windows "ROOT" certificate store. Safe to call after set_default_verify_paths.
+// No-op on other platforms — they already have usable defaults.
+void load_system_root_certificates([[maybe_unused]] ssl::context& ctx) {
+#ifdef _WIN32
+    HCERTSTORE store = ::CertOpenSystemStoreW(0, L"ROOT");
+    if (store == nullptr) {
+        return;
+    }
+    X509_STORE* x509_store = SSL_CTX_get_cert_store(ctx.native_handle());
+    if (x509_store == nullptr) {
+        ::CertCloseStore(store, 0);
+        return;
+    }
+    PCCERT_CONTEXT cert = nullptr;
+    std::size_t added = 0;
+    while ((cert = ::CertEnumCertificatesInStore(store, cert)) != nullptr) {
+        const unsigned char* encoded = cert->pbCertEncoded;
+        X509* x509 = d2i_X509(nullptr, &encoded, static_cast<long>(cert->cbCertEncoded));
+        if (x509 != nullptr) {
+            if (X509_STORE_add_cert(x509_store, x509) == 1) {
+                ++added;
+            }
+            X509_free(x509);
+        }
+    }
+    ::CertCloseStore(store, 0);
+    static std::once_flag logged_once;
+    std::call_once(logged_once, [added] {
+        core::logging::log_event(
+            core::logging::LogLevel::Info,
+            "runtime",
+            "proxy",
+            "tls_root_store_loaded",
+            "source=windows_root count=" + std::to_string(added)
+        );
+    });
+#endif
+}
 
 struct ParsedUpstreamUrl {
     std::string scheme;
@@ -854,6 +904,7 @@ std::optional<BridgeConnection> open_bridge_connection(
         *failure = websocket_result_with_init_failure(ec.message());
         return std::nullopt;
     }
+    load_system_root_certificates(*connection.ssl_context);
 
     connection.tls_ws = std::make_unique<websocket::stream<beast::ssl_stream<beast::tcp_stream>>>(
         *connection.io_context,
@@ -1441,6 +1492,7 @@ UpstreamExecutionResult execute_over_websocket(const openai::UpstreamRequestPlan
         result.body = ec.message();
         return result;
     }
+    load_system_root_certificates(ssl_context);
 
     websocket::stream<beast::ssl_stream<beast::tcp_stream>> ws(io_context, ssl_context);
     if (!SSL_set_tlsext_host_name(ws.next_layer().native_handle(), parsed->host.c_str())) {
