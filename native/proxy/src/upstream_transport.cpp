@@ -1054,7 +1054,10 @@ UpstreamExecutionResult execute_over_websocket_with_persistent_bridge(
     const auto previous_response_id = parse_previous_response_id_from_payload(plan.body);
     const bool has_previous_response = previous_response_id.has_value();
     const bool response_create_request = is_response_create_payload(plan.body);
-    const bool can_retry_on_fresh_bridge = response_create_request && !has_previous_response;
+    // Continuation turns can still hit stale sockets in long-lived bridge sessions.
+    // Allow one reconnect retry for any response.create request when transport-level
+    // failures occur; semantic errors like previous_response_not_found remain non-retryable.
+    const bool can_retry_on_fresh_bridge = response_create_request;
     core::logging::log_event(
         core::logging::LogLevel::Debug,
         "runtime",

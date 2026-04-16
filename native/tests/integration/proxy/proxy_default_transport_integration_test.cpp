@@ -583,6 +583,131 @@ private:
     std::atomic<int> request_count_{0};
 };
 
+class CloseAfterFirstTurnWebSocketServer final {
+public:
+    CloseAfterFirstTurnWebSocketServer() {
+        listen_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        REQUIRE(listen_fd_ >= 0);
+
+        int opt = 1;
+        REQUIRE(::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == 0);
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = htons(0);
+        REQUIRE(::bind(listen_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+        REQUIRE(::listen(listen_fd_, 4) == 0);
+
+        socklen_t len = sizeof(addr);
+        REQUIRE(::getsockname(listen_fd_, reinterpret_cast<sockaddr*>(&addr), &len) == 0);
+        port_ = ntohs(addr.sin_port);
+        REQUIRE(port_ > 0);
+
+        thread_ = std::thread([this] { serve_loop(); });
+    }
+
+    ~CloseAfterFirstTurnWebSocketServer() {
+        stopping_.store(true);
+        if (listen_fd_ >= 0) {
+            ::close(listen_fd_);
+            listen_fd_ = -1;
+        }
+        if (thread_.joinable()) {
+            thread_.join();
+        }
+    }
+
+    [[nodiscard]] std::uint16_t port() const {
+        return port_;
+    }
+
+    [[nodiscard]] int connection_count() const {
+        return connection_count_.load();
+    }
+
+    [[nodiscard]] int request_count() const {
+        return request_count_.load();
+    }
+
+private:
+    void serve_loop() {
+        while (!stopping_.load() && request_count_.load() < 2) {
+            const int client_fd = ::accept(listen_fd_, nullptr, nullptr);
+            if (client_fd < 0) {
+                if (stopping_.load()) {
+                    break;
+                }
+                if (errno == EINTR) {
+                    continue;
+                }
+                break;
+            }
+            serve_connection(client_fd);
+        }
+    }
+
+    void serve_connection(const int client_fd) {
+        namespace asio = boost::asio;
+        namespace beast = boost::beast;
+        namespace websocket = beast::websocket;
+        using tcp = asio::ip::tcp;
+
+        connection_count_.fetch_add(1);
+
+        asio::io_context io_context;
+        beast::tcp_stream stream(io_context);
+        boost::system::error_code ec;
+        stream.socket().assign(tcp::v4(), client_fd, ec);
+        if (ec) {
+            ::close(client_fd);
+            return;
+        }
+
+        websocket::stream<beast::tcp_stream> ws(std::move(stream));
+        ws.accept(ec);
+        if (ec) {
+            return;
+        }
+
+        beast::flat_buffer read_buffer;
+        ws.read(read_buffer, ec);
+        if (ec) {
+            return;
+        }
+
+        const auto request_index = request_count_.fetch_add(1) + 1;
+        const auto response_id = request_index == 1 ? "resp_ws_stale_first" : "resp_ws_stale_second";
+        const std::string created = std::string(R"({"type":"response.created","response":{"id":")") + response_id +
+                                    R"(","status":"in_progress"}})";
+        const std::string completed = std::string(R"({"type":"response.completed","response":{"id":")") + response_id +
+                                      R"(","object":"response","status":"completed","output":[]}})";
+
+        ws.text(true);
+        ws.write(asio::buffer(created), ec);
+        if (ec) {
+            return;
+        }
+        ws.text(true);
+        ws.write(asio::buffer(completed), ec);
+        if (ec) {
+            return;
+        }
+
+        // Always close the connection after serving a turn. The second request must
+        // recover by reconnecting when the first upstream bridge socket becomes stale.
+        boost::system::error_code close_ec;
+        ws.close(websocket::close_code::normal, close_ec);
+    }
+
+    int listen_fd_ = -1;
+    std::thread thread_;
+    std::uint16_t port_ = 0;
+    std::atomic<bool> stopping_{false};
+    std::atomic<int> connection_count_{0};
+    std::atomic<int> request_count_{0};
+};
+
 class ParallelSessionWebSocketServer final {
 public:
     ParallelSessionWebSocketServer() {
@@ -956,6 +1081,50 @@ TEST_CASE(
     REQUIRE(first.frames.size() == 2);
     REQUIRE(first.frames.back().find("\"resp_ws_timeout_recovered\"") != std::string::npos);
 
+    REQUIRE(server.request_count() == 2);
+    REQUIRE(server.connection_count() >= 2);
+
+    tightrope::proxy::reset_upstream_transport();
+}
+
+TEST_CASE(
+    "default upstream transport reconnects stale backend websocket bridge for continuation requests",
+    "[proxy][transport][default][ws][continuity][stale]"
+) {
+    tightrope::proxy::reset_upstream_transport();
+
+    CloseAfterFirstTurnWebSocketServer server;
+
+    EnvVarGuard base_url_guard("TIGHTROPE_UPSTREAM_BASE_URL");
+    const auto base_url = std::string("http://127.0.0.1:") + std::to_string(server.port());
+    REQUIRE(setenv("TIGHTROPE_UPSTREAM_BASE_URL", base_url.c_str(), 1) == 0);
+
+    const tightrope::proxy::openai::HeaderMap ws_headers = {
+        {"Connection", "Upgrade"},
+        {"Sec-WebSocket-Key", "abc"},
+        {"Originator", "codex_cli_rs"},
+        {"session_id", "ws-stale-continuation-1"},
+    };
+
+    const auto first = tightrope::server::controllers::proxy_responses_websocket(
+        "/backend-api/codex/responses",
+        R"({"model":"gpt-5.4","input":"turn-one"})",
+        ws_headers
+    );
+    REQUIRE(first.status == 101);
+    REQUIRE(first.accepted);
+    REQUIRE(first.frames.size() == 2);
+    REQUIRE(first.frames.back().find("\"resp_ws_stale_first\"") != std::string::npos);
+
+    const auto second = tightrope::server::controllers::proxy_responses_websocket(
+        "/backend-api/codex/responses",
+        R"({"model":"gpt-5.4","input":"turn-two","previous_response_id":"resp_ws_stale_first"})",
+        ws_headers
+    );
+    REQUIRE(second.status == 101);
+    REQUIRE(second.accepted);
+    REQUIRE(second.frames.size() == 2);
+    REQUIRE(second.frames.back().find("\"resp_ws_stale_second\"") != std::string::npos);
     REQUIRE(server.request_count() == 2);
     REQUIRE(server.connection_count() >= 2);
 
