@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import i18next from 'i18next';
 import { DEFAULT_ROUTING_MODES } from '../defaults';
 import type { TightropeService } from '../../services/tightrope';
 import type {
@@ -261,10 +262,10 @@ export function useSettings(options: UseSettingsOptions): UseSettingsResult {
         return { saved: false, previousApplied: null, updated: null };
       }
       applyPersistedDashboardSettings(updated);
-      options.pushRuntimeEvent('settings saved', 'success');
+      options.pushRuntimeEvent(i18next.t('status.settings_saved'), 'success');
       return { saved: true, previousApplied, updated };
     } catch (error) {
-      reportWarn(options.pushRuntimeEvent, error, 'Failed to save settings');
+      reportWarn(options.pushRuntimeEvent, error, i18next.t('status.settings_save_failed'));
       return { saved: false, previousApplied: null, updated: null };
     } finally {
       stateRef.current = settingsReducer(stateRef.current, { type: 'set_saving', value: false });
@@ -337,7 +338,7 @@ export function useSettings(options: UseSettingsOptions): UseSettingsResult {
       });
       return true;
     } catch (error) {
-      reportWarn(options.pushRuntimeEvent, error, 'Failed to update locked routing pool');
+      reportWarn(options.pushRuntimeEvent, error, i18next.t('status.locked_routing_pool_failed'));
       return false;
     }
   }

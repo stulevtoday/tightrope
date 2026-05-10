@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useTightropeService } from '../../../state/context';
 
 export function DatabaseSecuritySection() {
+  const { t } = useTranslation();
   const service = useTightropeService();
   const [currentPassphrase, setCurrentPassphrase] = useState('');
   const [nextPassphrase, setNextPassphrase] = useState('');
@@ -15,31 +17,31 @@ export function DatabaseSecuritySection() {
     setSuccessMessage(null);
 
     if (currentPassphrase.length === 0) {
-      setErrorMessage('Current passphrase is required.');
+      setErrorMessage(t('settings.db_current_passphrase_required'));
       return;
     }
     if (nextPassphrase.length < 8) {
-      setErrorMessage('New passphrase must be at least 8 characters.');
+      setErrorMessage(t('settings.db_new_passphrase_min'));
       return;
     }
     if (nextPassphrase !== confirmation) {
-      setErrorMessage('New passphrase and confirmation do not match.');
+      setErrorMessage(t('settings.db_passphrase_mismatch'));
       return;
     }
     if (nextPassphrase === currentPassphrase) {
-      setErrorMessage('New passphrase must differ from current passphrase.');
+      setErrorMessage(t('settings.db_passphrase_same'));
       return;
     }
 
     setSaving(true);
     try {
       await service.changeDatabasePassphraseRequest(currentPassphrase, nextPassphrase);
-      setSuccessMessage('Database passphrase changed for this running session.');
+      setSuccessMessage(t('settings.db_passphrase_changed'));
       setCurrentPassphrase('');
       setNextPassphrase('');
       setConfirmation('');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to change database passphrase.';
+      const message = error instanceof Error ? error.message : t('settings.db_passphrase_change_failed');
       setErrorMessage(message);
     } finally {
       setSaving(false);
@@ -49,19 +51,19 @@ export function DatabaseSecuritySection() {
   return (
     <div className="settings-group">
       <div className="settings-group-header">
-        <h3>Database Security</h3>
-        <p>Rotate the database password used for your local `store.db` and encrypted account token payloads.</p>
+        <h3>{t('settings.db_security_title')}</h3>
+        <p>{t('settings.db_security_desc')}</p>
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Change database password</strong>
-          <span>You must provide the current passphrase. Keep the new passphrase safe, recovery is not possible.</span>
+          <strong>{t('settings.db_change_password')}</strong>
+          <span>{t('settings.db_change_password_desc')}</span>
         </div>
         <div className="setting-inline-fields">
           <input
             className="setting-select setting-input--password"
             type="password"
-            placeholder="Current"
+            placeholder={t('settings.db_placeholder_current')}
             value={currentPassphrase}
             onChange={(event) => setCurrentPassphrase(event.target.value)}
             autoComplete="current-password"
@@ -70,7 +72,7 @@ export function DatabaseSecuritySection() {
           <input
             className="setting-select setting-input--password"
             type="password"
-            placeholder="New"
+            placeholder={t('settings.db_placeholder_new')}
             value={nextPassphrase}
             onChange={(event) => setNextPassphrase(event.target.value)}
             autoComplete="new-password"
@@ -79,14 +81,14 @@ export function DatabaseSecuritySection() {
           <input
             className="setting-select setting-input--password"
             type="password"
-            placeholder="Confirm"
+            placeholder={t('settings.db_placeholder_confirm')}
             value={confirmation}
             onChange={(event) => setConfirmation(event.target.value)}
             autoComplete="new-password"
             disabled={saving}
           />
           <button className="dock-btn accent" type="button" onClick={() => void submitChange()} disabled={saving}>
-            {saving ? 'Updating…' : 'Change Password'}
+            {saving ? t('settings.db_updating') : t('settings.db_change_password_button')}
           </button>
         </div>
       </div>

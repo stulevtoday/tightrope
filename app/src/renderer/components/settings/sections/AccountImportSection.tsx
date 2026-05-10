@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 interface AccountImportSectionProps {
   importWithoutOverwrite: boolean;
   onSetImportWithoutOverwrite: (enabled: boolean) => void;
@@ -9,30 +11,31 @@ export function AccountImportSection({
   onSetImportWithoutOverwrite,
   onOpenImportDialog,
 }: AccountImportSectionProps) {
+  const { t } = useTranslation();
   return (
     <div className="settings-group">
       <div className="settings-group-header">
-        <h3>Account Import</h3>
-        <p>Load accounts and login credentials from a SQLite snapshot with a delta preview before import.</p>
+        <h3>{t('settings.account_import_title')}</h3>
+        <p>{t('settings.account_import_desc')}</p>
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Import source database</strong>
-          <span>Open the import dialog to review account/login changes before applying.</span>
+          <strong>{t('settings.import_source_db')}</strong>
+          <span>{t('settings.import_source_db_desc')}</span>
         </div>
         <button className="dock-btn accent" type="button" onClick={onOpenImportDialog}>
-          Import SQLite DB
+          {t('settings.import_sqlite_db')}
         </button>
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Import without overwrite</strong>
-          <span>Keep existing accounts when importing duplicates.</span>
+          <strong>{t('settings.import_without_overwrite')}</strong>
+          <span>{t('settings.import_without_overwrite_desc')}</span>
         </div>
         <button
           className={`setting-toggle${importWithoutOverwrite ? ' on' : ''}`}
           type="button"
-          aria-label="Toggle import without overwrite"
+          aria-label={t('settings.import_without_overwrite_aria')}
           onClick={() => onSetImportWithoutOverwrite(!importWithoutOverwrite)}
         />
       </div>

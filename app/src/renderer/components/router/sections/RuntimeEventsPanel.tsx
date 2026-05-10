@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { RuntimeState } from '../../../shared/types';
 
 interface RuntimeEventsPanelProps {
@@ -5,12 +6,13 @@ interface RuntimeEventsPanelProps {
 }
 
 export function RuntimeEventsPanel({ runtimeState }: RuntimeEventsPanelProps) {
+  const { t } = useTranslation();
   return (
     <section className="events-panel">
       <header className="events-header">
         <div>
-          <p className="eyebrow">Log</p>
-          <h3>Runtime events</h3>
+          <p className="eyebrow">{t('router.events_eyebrow')}</p>
+          <h3>{t('router.events_title')}</h3>
         </div>
       </header>
       <div className="events-body">

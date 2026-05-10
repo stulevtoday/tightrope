@@ -1,4 +1,5 @@
 import type { ClusterStatus, SyncConflictResolution } from '../../../shared/types';
+import { useTranslation } from 'react-i18next';
 
 interface DatabaseSyncSectionProps {
   syncEnabled: boolean;
@@ -129,6 +130,7 @@ export function DatabaseSyncSection({
   onTriggerSyncNow,
   onOpenSyncTopology,
 }: DatabaseSyncSectionProps) {
+  const { t } = useTranslation();
   const peers = clusterStatus.peers ?? [];
   const connectedPeers = peers.filter((peer) => peer.state === 'connected').length;
   const unreachablePeers = peers.filter((peer) => peer.state === 'unreachable').length;
@@ -136,25 +138,25 @@ export function DatabaseSyncSection({
   return (
     <div className="settings-group">
       <div className="settings-group-header">
-        <h3>Database synchronization</h3>
-        <p>Bidirectional sync between instances using journaled change replication with conflict resolution.</p>
+        <h3>{t('settings.db_sync_title')}</h3>
+        <p>{t('settings.db_sync_desc')}</p>
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Enable sync</strong>
-          <span>Activate bidirectional replication with a remote instance</span>
+          <strong>{t('settings.db_sync_enable')}</strong>
+          <span>{t('settings.db_sync_enable_desc')}</span>
         </div>
         <button
           className={`setting-toggle${syncEnabled ? ' on' : ''}`}
           type="button"
-          aria-label="Toggle sync"
+          aria-label={t('settings.db_sync_toggle_aria')}
           onClick={onToggleSyncEnabled}
         />
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Instance ID</strong>
-          <span>Unique site identifier for this node</span>
+          <strong>{t('settings.db_sync_instance_id')}</strong>
+          <span>{t('settings.db_sync_instance_id_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -167,8 +169,8 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Sync port</strong>
-          <span>TCP port for peer replication traffic</span>
+          <strong>{t('settings.db_sync_port')}</strong>
+          <span>{t('settings.db_sync_port_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -182,20 +184,20 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Peer discovery</strong>
-          <span>Find instances on the local network via mDNS (Bonjour/Avahi)</span>
+          <strong>{t('settings.db_sync_peer_discovery')}</strong>
+          <span>{t('settings.db_sync_peer_discovery_desc')}</span>
         </div>
         <button
           className={`setting-toggle${syncDiscoveryEnabled ? ' on' : ''}`}
           type="button"
-          aria-label="Toggle peer discovery"
+          aria-label={t('settings.db_sync_peer_discovery_aria')}
           onClick={() => onSetSyncDiscoveryEnabled(!syncDiscoveryEnabled)}
         />
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Cluster name</strong>
-          <span>Only sync with peers advertising the same cluster</span>
+          <strong>{t('settings.db_sync_cluster_name')}</strong>
+          <span>{t('settings.db_sync_cluster_name_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -207,12 +209,12 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Discovered peers</strong>
-          <span>Instances currently visible to this node</span>
+          <strong>{t('settings.db_sync_discovered_peers')}</strong>
+          <span>{t('settings.db_sync_discovered_peers_desc')}</span>
         </div>
         <div style={{ display: 'grid', gap: '0.35rem', justifyItems: 'end' }}>
           {peers.length === 0 ? (
-            <span style={{ color: 'var(--text-secondary)', fontSize: '11.5px' }}>none</span>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '11.5px' }}>{t('settings.db_sync_none')}</span>
           ) : (
             peers.map((peer) => (
               <div key={`${peer.site_id}-${peer.address}`} style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
@@ -231,7 +233,7 @@ export function DatabaseSyncSection({
                   {peer.last_probe_error ? ` · probe error: ${peer.last_probe_error}` : ''}
                 </span>
                 <button className="btn-danger" type="button" style={{ fontSize: '11px', padding: '0.15rem 0.4rem' }} onClick={() => onRemovePeer(peer.site_id)}>
-                  Remove
+                  {t('settings.db_sync_remove_peer')}
                 </button>
               </div>
             ))
@@ -240,27 +242,27 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Manual peer</strong>
-          <span>Fallback address for cross-subnet peers</span>
+          <strong>{t('settings.db_sync_manual_peer')}</strong>
+          <span>{t('settings.db_sync_manual_peer_desc')}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
           <input
             className="setting-input"
             type="text"
-            placeholder="host:port"
+            placeholder={t('settings.db_sync_manual_peer_placeholder')}
             value={manualPeerAddress}
             onChange={(event) => onSetManualPeerAddress(event.target.value)}
             style={{ width: '160px', textAlign: 'right', fontFamily: "'SF Mono',ui-monospace,monospace" }}
           />
           <button className="btn-secondary" type="button" onClick={onAddManualPeer}>
-            Add peer
+            {t('settings.db_sync_add_peer')}
           </button>
         </div>
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Sync interval</strong>
-          <span>Seconds between sync cycles (0 = manual trigger)</span>
+          <strong>{t('settings.db_sync_interval')}</strong>
+          <span>{t('settings.db_sync_interval_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -274,8 +276,8 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Conflict resolution</strong>
-          <span>Strategy when both instances modify the same row</span>
+          <strong>{t('settings.db_sync_conflict_resolution')}</strong>
+          <span>{t('settings.db_sync_conflict_resolution_desc')}</span>
         </div>
         <select
           className="setting-select"
@@ -283,15 +285,15 @@ export function DatabaseSyncSection({
           value={syncConflictResolution}
           onChange={(event) => onSetSyncConflictResolution(event.target.value as SyncConflictResolution)}
         >
-          <option value="lww">Last-writer-wins (HLC)</option>
-          <option value="site_priority">Site priority</option>
-          <option value="field_merge">Per-field merge</option>
+          <option value="lww">{t('settings.db_sync_conflict_lww_hlc')}</option>
+          <option value="site_priority">{t('settings.db_sync_conflict_site_priority')}</option>
+          <option value="field_merge">{t('settings.db_sync_conflict_per_field')}</option>
         </select>
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Journal retention</strong>
-          <span>Days to keep change journal entries before compaction</span>
+          <strong>{t('settings.db_sync_journal_retention')}</strong>
+          <span>{t('settings.db_sync_journal_retention_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -305,37 +307,37 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Transport encryption</strong>
-          <span>TLS for sync traffic between instances</span>
+          <strong>{t('settings.db_sync_transport_encryption')}</strong>
+          <span>{t('settings.db_sync_transport_encryption_desc')}</span>
         </div>
         <button
           className={`setting-toggle${syncTlsEnabled ? ' on' : ''}`}
           type="button"
-          aria-label="Toggle sync tls"
+          aria-label={t('settings.db_sync_tls_toggle_aria')}
           onClick={() => onSetSyncTlsEnabled(!syncTlsEnabled)}
         />
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Handshake auth</strong>
-          <span>Require signed peer handshakes with a shared cluster secret</span>
+          <strong>{t('settings.db_sync_handshake_auth')}</strong>
+          <span>{t('settings.db_sync_handshake_auth_desc')}</span>
         </div>
         <button
           className={`setting-toggle${syncRequireHandshakeAuth ? ' on' : ''}`}
           type="button"
-          aria-label="Toggle handshake auth"
+          aria-label={t('settings.db_sync_handshake_auth_aria')}
           onClick={() => onSetSyncRequireHandshakeAuth(!syncRequireHandshakeAuth)}
         />
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Cluster shared secret</strong>
-          <span>Pre-shared secret used for handshake HMAC authentication</span>
+          <strong>{t('settings.db_sync_cluster_secret')}</strong>
+          <span>{t('settings.db_sync_cluster_secret_desc')}</span>
         </div>
         <input
           className="setting-input"
           type="password"
-          placeholder="cluster secret"
+          placeholder={t('settings.db_sync_cluster_secret_placeholder')}
           value={syncClusterSharedSecret}
           onChange={(event) => onSetSyncClusterSharedSecret(event.target.value)}
           style={{ width: '220px', textAlign: 'right', fontFamily: "'SF Mono',ui-monospace,monospace" }}
@@ -343,25 +345,25 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>TLS peer verification</strong>
-          <span>Validate peer certificate chain for sync connections</span>
+          <strong>{t('settings.db_sync_tls_verify_peer')}</strong>
+          <span>{t('settings.db_sync_tls_verify_peer_desc')}</span>
         </div>
         <button
           className={`setting-toggle${syncTlsVerifyPeer ? ' on' : ''}`}
           type="button"
-          aria-label="Toggle sync tls peer verification"
+          aria-label={t('settings.db_sync_tls_verify_peer_aria')}
           onClick={() => onSetSyncTlsVerifyPeer(!syncTlsVerifyPeer)}
         />
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>TLS CA bundle path</strong>
-          <span>PEM file used to verify peer certificate chain</span>
+          <strong>{t('settings.db_sync_tls_ca_path')}</strong>
+          <span>{t('settings.db_sync_tls_ca_path_desc')}</span>
         </div>
         <input
           className="setting-input"
           type="text"
-          placeholder="/path/to/ca.pem"
+          placeholder={t('settings.db_sync_tls_ca_path_placeholder')}
           value={syncTlsCaCertificatePath}
           onChange={(event) => onSetSyncTlsCaCertificatePath(event.target.value)}
           style={{ width: '260px', textAlign: 'right', fontFamily: "'SF Mono',ui-monospace,monospace" }}
@@ -369,13 +371,13 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>TLS cert chain path</strong>
-          <span>Node certificate chain PEM presented to peers</span>
+          <strong>{t('settings.db_sync_tls_cert_chain_path')}</strong>
+          <span>{t('settings.db_sync_tls_cert_chain_path_desc')}</span>
         </div>
         <input
           className="setting-input"
           type="text"
-          placeholder="/path/to/cert-chain.pem"
+          placeholder={t('settings.db_sync_tls_cert_chain_path_placeholder')}
           value={syncTlsCertificateChainPath}
           onChange={(event) => onSetSyncTlsCertificateChainPath(event.target.value)}
           style={{ width: '260px', textAlign: 'right', fontFamily: "'SF Mono',ui-monospace,monospace" }}
@@ -383,13 +385,13 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>TLS private key path</strong>
-          <span>Private key PEM paired with the cert chain</span>
+          <strong>{t('settings.db_sync_tls_private_key_path')}</strong>
+          <span>{t('settings.db_sync_tls_private_key_path_desc')}</span>
         </div>
         <input
           className="setting-input"
           type="text"
-          placeholder="/path/to/key.pem"
+          placeholder={t('settings.db_sync_tls_private_key_path_placeholder')}
           value={syncTlsPrivateKeyPath}
           onChange={(event) => onSetSyncTlsPrivateKeyPath(event.target.value)}
           style={{ width: '260px', textAlign: 'right', fontFamily: "'SF Mono',ui-monospace,monospace" }}
@@ -397,13 +399,13 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Pinned peer SHA-256</strong>
-          <span>Optional leaf certificate fingerprint pin (hex)</span>
+          <strong>{t('settings.db_sync_pinned_sha256')}</strong>
+          <span>{t('settings.db_sync_pinned_sha256_desc')}</span>
         </div>
         <input
           className="setting-input"
           type="text"
-          placeholder="64-char sha256"
+          placeholder={t('settings.db_sync_pinned_sha256_placeholder')}
           value={syncTlsPinnedPeerCertificateSha256}
           onChange={(event) => onSetSyncTlsPinnedPeerCertificateSha256(event.target.value)}
           style={{ width: '260px', textAlign: 'right', fontFamily: "'SF Mono',ui-monospace,monospace" }}
@@ -411,8 +413,8 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Sync schema version</strong>
-          <span>Local protocol/schema version advertised to peers</span>
+          <strong>{t('settings.db_sync_schema_version')}</strong>
+          <span>{t('settings.db_sync_schema_version_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -426,8 +428,8 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Min supported schema</strong>
-          <span>Reject peers below this schema version</span>
+          <strong>{t('settings.db_sync_min_supported_schema')}</strong>
+          <span>{t('settings.db_sync_min_supported_schema_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -441,32 +443,32 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Allow schema downgrade</strong>
-          <span>Permit negotiated downgrade to a lower compatible schema</span>
+          <strong>{t('settings.db_sync_allow_schema_downgrade')}</strong>
+          <span>{t('settings.db_sync_allow_schema_downgrade_desc')}</span>
         </div>
         <button
           className={`setting-toggle${syncAllowSchemaDowngrade ? ' on' : ''}`}
           type="button"
-          aria-label="Toggle sync schema downgrade"
+          aria-label={t('settings.db_sync_allow_schema_downgrade_aria')}
           onClick={() => onSetSyncAllowSchemaDowngrade(!syncAllowSchemaDowngrade)}
         />
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Peer probe enabled</strong>
-          <span>Run lifecycle transport probes during peer refresh</span>
+          <strong>{t('settings.db_sync_peer_probe_enabled')}</strong>
+          <span>{t('settings.db_sync_peer_probe_enabled_desc')}</span>
         </div>
         <button
           className={`setting-toggle${syncPeerProbeEnabled ? ' on' : ''}`}
           type="button"
-          aria-label="Toggle sync peer probe enabled"
+          aria-label={t('settings.db_sync_peer_probe_enabled_aria')}
           onClick={() => onSetSyncPeerProbeEnabled(!syncPeerProbeEnabled)}
         />
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Peer probe interval (ms)</strong>
-          <span>Minimum interval between probe attempts for the same peer</span>
+          <strong>{t('settings.db_sync_peer_probe_interval')}</strong>
+          <span>{t('settings.db_sync_peer_probe_interval_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -480,8 +482,8 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Peer probe timeout (ms)</strong>
-          <span>Timeout used for per-attempt transport handshake probes</span>
+          <strong>{t('settings.db_sync_peer_probe_timeout')}</strong>
+          <span>{t('settings.db_sync_peer_probe_timeout_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -495,8 +497,8 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Max probes per refresh</strong>
-          <span>Bound probe work per refresh cycle to avoid bursts</span>
+          <strong>{t('settings.db_sync_max_probes')}</strong>
+          <span>{t('settings.db_sync_max_probes_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -510,20 +512,20 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Fail closed on probe failures</strong>
-          <span>Mark peers unreachable after repeated failed probes</span>
+          <strong>{t('settings.db_sync_fail_closed')}</strong>
+          <span>{t('settings.db_sync_fail_closed_desc')}</span>
         </div>
         <button
           className={`setting-toggle${syncPeerProbeFailClosed ? ' on' : ''}`}
           type="button"
-          aria-label="Toggle sync peer probe fail closed"
+          aria-label={t('settings.db_sync_fail_closed_aria')}
           onClick={() => onSetSyncPeerProbeFailClosed(!syncPeerProbeFailClosed)}
         />
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Fail-closed threshold</strong>
-          <span>Consecutive probe failures required before fail-closed state applies</span>
+          <strong>{t('settings.db_sync_fail_closed_threshold')}</strong>
+          <span>{t('settings.db_sync_fail_closed_threshold_desc')}</span>
         </div>
         <input
           className="setting-input"
@@ -537,48 +539,48 @@ export function DatabaseSyncSection({
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Consistency model</strong>
+          <strong>{t('settings.db_sync_consistency_model')}</strong>
         </div>
         <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'baseline' }}>
-            <span style={{ color: 'var(--text)', fontWeight: 500 }}>Raft consensus</span>
-            <span>accounts, settings, API keys</span>
+            <span style={{ color: 'var(--text)', fontWeight: 500 }}>{t('settings.db_sync_raft_consensus')}</span>
+            <span>{t('settings.db_sync_raft_consensus_scope')}</span>
           </div>
           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'baseline' }}>
-            <span style={{ color: 'var(--text)', fontWeight: 500 }}>CRDT merge</span>
-            <span>usage, sessions, IP allowlist</span>
+            <span style={{ color: 'var(--text)', fontWeight: 500 }}>{t('settings.db_sync_crdt_merge')}</span>
+            <span>{t('settings.db_sync_crdt_merge_scope')}</span>
           </div>
         </div>
       </div>
       <div className="setting-row" style={{ borderBottom: 'none' }}>
         <div className="setting-label">
-          <strong>Cluster status</strong>
+          <strong>{t('settings.db_sync_cluster_status')}</strong>
         </div>
         <div style={{ display: 'grid', gap: '0.3rem', fontSize: '11.5px', textAlign: 'right' }}>
           <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', justifyContent: 'flex-end' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>
-              {clusterStatus.enabled ? (clusterStatus.role === 'standalone' ? 'Standalone' : clusterStatus.role) : 'disabled'}
+              {clusterStatus.enabled ? (clusterStatus.role === 'standalone' ? t('settings.db_sync_role_standalone') : clusterStatus.role) : t('settings.db_sync_role_disabled')}
             </span>
             <span style={{ color: 'var(--text-secondary)' }}>Term {clusterStatus.term}</span>
             <span style={{ color: 'var(--text-secondary)' }}>Commit #{clusterStatus.commit_index}</span>
           </div>
           <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', justifyContent: 'flex-end' }}>
             <span style={{ color: 'var(--ok)' }}>
-              {connectedPeers}/{clusterStatus.peers.length} peers connected
+              {t('settings.db_sync_peers_connected', { connected: connectedPeers, total: clusterStatus.peers.length })}
             </span>
-            {unreachablePeers > 0 ? <span style={{ color: 'var(--danger)' }}>{unreachablePeers} unreachable</span> : null}
-            <span style={{ color: 'var(--text-secondary)' }}>Last sync: {formatLastSync(clusterStatus.last_sync_at)}</span>
-            <span style={{ color: 'var(--text-secondary)' }}>Journal: {clusterStatus.journal_entries}</span>
+            {unreachablePeers > 0 ? <span style={{ color: 'var(--danger)' }}>{t('settings.db_sync_peers_unreachable', { count: unreachablePeers })}</span> : null}
+            <span style={{ color: 'var(--text-secondary)' }}>{t('settings.db_sync_last_sync')} {formatLastSync(clusterStatus.last_sync_at)}</span>
+            <span style={{ color: 'var(--text-secondary)' }}>{t('settings.db_sync_journal')} {clusterStatus.journal_entries}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', color: 'var(--text-secondary)' }}>
-            <span>Detailed lag, ingress, and peer metrics are in View topology → Stats.</span>
+            <span>{t('settings.db_sync_lag_detail_note')}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
             <button className="btn-secondary" type="button" onClick={onOpenSyncTopology}>
-              View topology
+              {t('settings.db_sync_view_topology')}
             </button>
             <button className="btn-secondary" type="button" onClick={onTriggerSyncNow}>
-              Trigger sync now
+              {t('settings.db_sync_trigger_now')}
             </button>
           </div>
         </div>

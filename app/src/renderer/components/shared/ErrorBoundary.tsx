@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import { Component, type ReactNode } from 'react';
 
 interface ErrorBoundaryProps {
@@ -34,9 +35,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           }}
         >
           <section style={{ maxWidth: 640, width: '100%', textAlign: 'center' }}>
-            <h1 style={{ marginBottom: '0.75rem' }}>Renderer crashed</h1>
+            <h1 style={{ marginBottom: '0.75rem' }}>{i18next.t('error_boundary.title')}</h1>
             <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
-              Something went wrong in the UI. You can reset the screen and continue.
+              {i18next.t('error_boundary.message')}
             </p>
             <pre
               style={{
@@ -54,7 +55,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               {this.state.error.message}
             </pre>
             <button type="button" className="btn-secondary" onClick={this.handleReset}>
-              Reset UI
+              {i18next.t('error_boundary.reset_ui')}
             </button>
           </section>
         </main>

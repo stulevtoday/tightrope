@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Account, RouteMetrics, RouteRow } from '../../../shared/types';
 import { statusClass } from '../../../state/logic';
 
@@ -22,12 +23,13 @@ export function RequestsLedgerPane({
   formatNumber,
   onSelectRoute,
 }: RequestsLedgerPaneProps) {
+  const { t } = useTranslation();
   return (
     <section className="pane ledger-pane">
       <header className="section-header ledger-header">
         <div>
-          <p className="eyebrow">Live</p>
-          <h2>Requests</h2>
+          <p className="eyebrow">{t('router.ledger_eyebrow')}</p>
+          <h2>{t('router.ledger_title')}</h2>
         </div>
         <div className="protocol-filters" aria-label="Protocol filters">
           <span className="filter-chip active">SSE</span>
@@ -39,19 +41,19 @@ export function RequestsLedgerPane({
       <div className="pane-body ledger-body">
         <section className="ops-strip" aria-label="Key metrics">
           <article className="metric">
-            <span>Req / min</span>
+            <span>{t('router.ledger_req_min')}</span>
             <strong>{formatNumber(kpis.rpm)}</strong>
           </article>
           <article className="metric">
-            <span>p95 latency</span>
+            <span>{t('router.ledger_p95_latency')}</span>
             <strong>{kpis.p95} ms</strong>
           </article>
           <article className="metric">
-            <span>Failovers</span>
+            <span>{t('router.ledger_failovers')}</span>
             <strong>{kpis.failover}</strong>
           </article>
           <article className="metric">
-            <span>Sticky hit</span>
+            <span>{t('router.ledger_sticky_hit')}</span>
             <strong>{kpis.sticky}%</strong>
           </article>
         </section>
@@ -60,22 +62,22 @@ export function RequestsLedgerPane({
           <table>
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Request</th>
-                <th>Protocol</th>
-                <th>Model</th>
-                <th>Account</th>
-                <th>Tokens</th>
-                <th>Latency</th>
-                <th>Score</th>
-                <th>Status</th>
+                <th>{t('router.ledger_col_time')}</th>
+                <th>{t('router.ledger_col_request')}</th>
+                <th>{t('router.ledger_col_protocol')}</th>
+                <th>{t('router.ledger_col_model')}</th>
+                <th>{t('router.ledger_col_account')}</th>
+                <th>{t('router.ledger_col_tokens')}</th>
+                <th>{t('router.ledger_col_latency')}</th>
+                <th>{t('router.ledger_col_score')}</th>
+                <th>{t('router.ledger_col_status')}</th>
               </tr>
             </thead>
             <tbody id="routeRows">
               {visibleRows.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="empty-state">
-                    No routes match the current account and search filter.
+                    {t('router.ledger_no_routes')}
                   </td>
                 </tr>
               ) : (

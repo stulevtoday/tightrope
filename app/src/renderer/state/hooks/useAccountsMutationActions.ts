@@ -1,4 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import i18next from 'i18next';
 import type { TightropeService } from '../../services/tightrope';
 import type { Account, AccountUsageRefreshStatus, RuntimeAccount } from '../../shared/types';
 import { errorMessage, reportWarn } from '../errors';
@@ -95,7 +96,7 @@ export async function refreshUsageTelemetryAfterAccountAdd(
     try {
       const refreshed = await deps.service.refreshAccountUsageTelemetryRequest(accountId);
       deps.applyRuntimeAccountPatch(refreshed);
-      deps.pushRuntimeEvent(`usage telemetry refreshed: ${accountName}`, 'success');
+      deps.pushRuntimeEvent(i18next.t('status.telemetry_refreshed', { name: accountName }), 'success');
       return;
     } catch (error) {
       lastMessage = errorMessage(error, 'Failed to refresh usage telemetry');
@@ -104,7 +105,7 @@ export async function refreshUsageTelemetryAfterAccountAdd(
       await sleep(ACCOUNT_USAGE_REFRESH_RETRY_MS);
     }
   }
-  deps.pushRuntimeEvent(`account added, but usage telemetry is unavailable: ${lastMessage}`, 'warn');
+  deps.pushRuntimeEvent(i18next.t('status.telemetry_unavailable', { message: lastMessage }), 'warn');
 }
 
 export async function toggleAccountPinAction(
@@ -124,7 +125,7 @@ export async function toggleAccountPinAction(
       await deps.service.unpinAccountRequest(accountId);
     }
     await refreshAccountsAfterMutation(deps);
-    deps.pushRuntimeEvent(`${nextPinned ? 'account pinned' : 'account unpinned'}: ${account.name}`, 'success');
+    deps.pushRuntimeEvent(i18next.t(nextPinned ? 'status.account_pinned' : 'status.account_unpinned', { name: account.name }), 'success');
   } catch (error) {
     reportWarn(deps.pushRuntimeEvent, error, 'Failed to update account pin state');
   }
@@ -139,7 +140,7 @@ export async function pauseAccountAction(deps: AccountMutationDeps, accountId: s
   try {
     await deps.service.pauseAccountRequest(accountId);
     await refreshAccountsAfterMutation(deps);
-    deps.pushRuntimeEvent(`account paused: ${account.name}`, 'warn');
+    deps.pushRuntimeEvent(i18next.t('status.account_paused', { name: account.name }), 'warn');
   } catch (error) {
     reportWarn(deps.pushRuntimeEvent, error, 'Failed to pause account');
   }
@@ -154,7 +155,7 @@ export async function reactivateAccountAction(deps: AccountMutationDeps, account
   try {
     await deps.service.reactivateAccountRequest(accountId);
     await refreshAccountsAfterMutation(deps);
-    deps.pushRuntimeEvent(`account resumed: ${account.name}`, 'success');
+    deps.pushRuntimeEvent(i18next.t('status.account_resumed', { name: account.name }), 'success');
   } catch (error) {
     reportWarn(deps.pushRuntimeEvent, error, 'Failed to resume account');
   }
@@ -169,7 +170,7 @@ export async function deleteAccountAction(deps: AccountMutationDeps, accountId: 
   try {
     await deps.service.deleteAccountRequest(accountId);
     await refreshAccountsAfterMutation(deps);
-    deps.pushRuntimeEvent(`account deleted: ${account.name}`, 'warn');
+    deps.pushRuntimeEvent(i18next.t('status.account_deleted', { name: account.name }), 'warn');
     return true;
   } catch (error) {
     reportWarn(deps.pushRuntimeEvent, error, 'Failed to delete account');
@@ -197,7 +198,7 @@ export async function refreshAccountTelemetryAction(deps: RefreshTelemetryDeps, 
     deps.setTokenRefreshRequired(accountId, false);
     deps.setUsageRefreshStatus(accountId, 'success', null);
     await refreshAccountsAfterMutation(deps);
-    deps.pushRuntimeEvent(`usage telemetry refreshed: ${account.name}`, 'success');
+    deps.pushRuntimeEvent(i18next.t('status.telemetry_refreshed', { name: account.name }), 'success');
   } catch (error) {
     const detail = errorMessage(error, 'Failed to refresh usage telemetry');
     const authRequired = detailIndicatesAuthRequired(detail);
@@ -250,7 +251,7 @@ export async function refreshAllAccountsTelemetryAction(deps: RefreshAllTelemetr
   try {
     const queued = [...deps.accountsRef.current];
     if (queued.length === 0) {
-      deps.pushRuntimeEvent('telemetry refresh queue: no accounts available', 'warn');
+      deps.pushRuntimeEvent(i18next.t('status.telemetry_queue_no_accounts'), 'warn');
       return;
     }
     const total = queued.length;
@@ -270,7 +271,7 @@ export async function refreshAllAccountsTelemetryAction(deps: RefreshAllTelemetr
         for (const event of deferredRuntimeEvents) {
           deps.pushRuntimeEvent(event.text, event.level);
         }
-        publishStatusNotice({ message: 'telemetry refresh queue cancelled', level: 'warn' });
+        publishStatusNotice({ message: i18next.t('status.telemetry_queue_cancelled'), level: 'warn' });
         return;
       }
       const current = accountFromRef(deps.accountsRef, queuedAccount.id);
@@ -377,13 +378,13 @@ export async function refreshAccountTokenAction(deps: RefreshTokenDeps, accountI
     deps.setTokenRefreshRequired(accountId, false);
     deps.setUsageRefreshStatus(accountId, 'success', null);
     await refreshAccountsAfterMutation(deps);
-    deps.pushRuntimeEvent(`account token refreshed: ${account.name}`, 'success');
+    deps.pushRuntimeEvent(i18next.t('status.token_refreshed', { name: account.name }), 'success');
   } catch (error) {
     const detail = errorMessage(error, 'Failed to refresh account token');
     const authRequired = detailIndicatesAuthRequired(detail);
     deps.setTokenRefreshRequired(accountId, authRequired);
     deps.setUsageRefreshStatus(accountId, authRequired ? 'auth_required' : 'failed', detail);
-    deps.pushRuntimeEvent(`Failed to refresh account token: ${account.name} (${account.id}) — ${detail}`, 'warn');
+    deps.pushRuntimeEvent(i18next.t('status.token_refresh_failed', { name: account.name, id: account.id, detail }), 'warn');
   } finally {
     if (!deps.isMounted || deps.isMounted()) {
       deps.setRefreshingAccountTokenId((current) => (current === accountId ? null : current));

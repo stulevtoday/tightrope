@@ -20,7 +20,7 @@ detect_triplet() {
   esac
 
   case "$OS" in
-    Darwin) echo "${arch}-osx-static"   ;;
+    Darwin) echo "${arch}-osx"   ;;
     Linux)  echo "${arch}-linux-static"  ;;
     *)      red "Unsupported OS: $OS"; exit 1 ;;
   esac
@@ -64,10 +64,12 @@ cmd_setup() {
 
   bold "Installing vcpkg dependencies (triplet: $TRIPLET)..."
   "$VCPKG_DIR/vcpkg" install \
-    --triplet="$TRIPLET" \
-    --overlay-triplets="$ROOT/triplets" \
-    --x-manifest-root="$ROOT" \
-    --x-install-root="$ROOT/vcpkg_installed"
+  --triplet="$TRIPLET" \
+  --overlay-triplets="$ROOT/triplets" \
+  --overlay-ports="$ROOT/ports" \
+  --x-manifest-root="$ROOT" \
+  --x-install-root="$ROOT/vcpkg_installed" \
+  --allow-unsupported
 
   bold "Installing npm packages..."
   cd "$ROOT/app"

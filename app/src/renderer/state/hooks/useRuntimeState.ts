@@ -1,4 +1,5 @@
 import { useCallback, type Dispatch, type SetStateAction } from 'react';
+import i18next from 'i18next';
 import type { TightropeService } from '../../services/tightrope';
 import type { AppRuntimeState } from '../../shared/types';
 import { reportWarn } from '../errors';
@@ -58,14 +59,14 @@ export function useRuntimeState(options: UseRuntimeStateOptions): UseRuntimeStat
         }));
 
         if (action === 'start') {
-          pushRuntimeEvent(enabled ? 'backend started' : 'backend start was rejected', enabled ? 'success' : 'warn');
+          pushRuntimeEvent(enabled ? i18next.t('status.backend_started') : i18next.t('status.backend_start_rejected'), enabled ? 'success' : 'warn');
           return;
         }
       if (action === 'restart') {
-          pushRuntimeEvent(enabled ? 'backend restarted' : 'backend restart was rejected', enabled ? 'success' : 'warn');
+          pushRuntimeEvent(enabled ? i18next.t('status.backend_restarted') : i18next.t('status.backend_restart_rejected'), enabled ? 'success' : 'warn');
           return;
         }
-        pushRuntimeEvent(enabled ? 'backend stop was rejected' : 'backend stopped', 'warn');
+        pushRuntimeEvent(enabled ? i18next.t('status.backend_stop_rejected') : i18next.t('status.backend_stopped'), 'warn');
       } catch (error) {
         reportWarn(pushRuntimeEvent, error, 'Failed to update backend state');
       }
@@ -74,7 +75,7 @@ export function useRuntimeState(options: UseRuntimeStateOptions): UseRuntimeStat
 
   const toggleRoutePause = useCallback((): void => {
     if (runtimeState.backend !== 'running') {
-      pushRuntimeEvent('pause ignored: backend is stopped', 'warn');
+      pushRuntimeEvent(i18next.t('status.pause_ignored_stopped'), 'warn');
       return;
     }
 
@@ -86,7 +87,7 @@ export function useRuntimeState(options: UseRuntimeStateOptions): UseRuntimeStat
         pausedRoutes: nextPaused,
       },
     }));
-    pushRuntimeEvent(nextPaused ? 'new routes paused' : 'new routes resumed');
+    pushRuntimeEvent(nextPaused ? i18next.t('status.new_routes_paused') : i18next.t('status.new_routes_resumed'));
   }, [pushRuntimeEvent, runtimeState.backend, runtimeState.pausedRoutes, setState]);
 
   const toggleAutoRestart = useCallback((): void => {
@@ -98,7 +99,7 @@ export function useRuntimeState(options: UseRuntimeStateOptions): UseRuntimeStat
         autoRestart: nextAutoRestart,
       },
     }));
-    pushRuntimeEvent(nextAutoRestart ? 'auto-restart enabled' : 'auto-restart disabled');
+    pushRuntimeEvent(nextAutoRestart ? i18next.t('status.auto_restart_enabled') : i18next.t('status.auto_restart_disabled'));
   }, [pushRuntimeEvent, runtimeState.autoRestart, setState]);
 
   return {

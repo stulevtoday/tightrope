@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef, type Dispatch, type SetStateAction } from 'react';
+import i18next from 'i18next';
 import type { TightropeService } from '../../services/tightrope';
 import type {
   Account,
@@ -217,7 +218,7 @@ export function useOAuthFlow(options: UseOAuthFlowOptions): UseOAuthFlowResult {
         void options.refreshUsageTelemetryAfterAccountAdd(selected.accountId, selected.email);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'OAuth succeeded but account refresh failed';
+      const message = error instanceof Error ? error.message : i18next.t('status.oauth_succeeded_refresh_failed');
       setAddAccountErrorState(message);
     }
   }
@@ -277,7 +278,7 @@ export function useOAuthFlow(options: UseOAuthFlowOptions): UseOAuthFlowResult {
     }
 
     closeAddAccountDialog();
-    options.pushRuntimeEvent('oauth dialog closed after account import', 'success');
+    options.pushRuntimeEvent(i18next.t('status.oauth_dialog_closed_after_import'), 'success');
   }, [options.accounts, options.state.addAccountOpen, options.state.addAccountStep]);
 
   function setAddAccountStep(step: AddAccountStep): void {
@@ -301,7 +302,7 @@ export function useOAuthFlow(options: UseOAuthFlowOptions): UseOAuthFlowResult {
       if (!payload) {
         throw new Error('Import file must include an account email');
       }
-      const imported = await importAccountRequest(payload.email, payload.provider);
+      const imported = await importAccountRequest(payload.email, payload.provider, payload.access_token, payload.refresh_token);
       await options.refreshAccountsFromNative();
       setFlowPhase('stepSuccess');
       setRuntimeState((previous) =>
@@ -311,7 +312,7 @@ export function useOAuthFlow(options: UseOAuthFlowOptions): UseOAuthFlowResult {
           selectedAccountDetailId: imported.accountId,
         }),
       );
-      options.pushRuntimeEvent(`account imported: ${imported.email}`, 'success');
+      options.pushRuntimeEvent(i18next.t('status.account_imported', { email: imported.email }), 'success');
       void options.refreshUsageTelemetryAfterAccountAdd(imported.accountId, imported.email);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Import failed';
@@ -331,7 +332,7 @@ export function useOAuthFlow(options: UseOAuthFlowOptions): UseOAuthFlowResult {
       window.open(authorizationUrl, '_blank', 'noopener,noreferrer');
       return;
     }
-    options.pushRuntimeEvent('Browser authorization URL is not ready yet', 'warn');
+    options.pushRuntimeEvent(i18next.t('status.browser_auth_url_not_ready'), 'warn');
   }
 
   async function submitManualCallback(): Promise<void> {
@@ -372,14 +373,14 @@ export function useOAuthFlow(options: UseOAuthFlowOptions): UseOAuthFlowResult {
   async function copyBrowserAuthUrl(): Promise<void> {
     const value = options.state.browserAuthUrl.trim();
     if (!isValidOAuthAuthorizationUrl(value)) {
-      options.pushRuntimeEvent('No browser authorization URL to copy', 'warn');
+      options.pushRuntimeEvent(i18next.t('status.no_browser_auth_url'), 'warn');
       return;
     }
     try {
       await writeClipboardText(value);
       flashCopyLabel('copyAuthLabel');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to copy browser authorization URL';
+      const message = error instanceof Error ? error.message : i18next.t('status.failed_copy_browser_url');
       options.pushRuntimeEvent(message, 'warn');
     }
   }
@@ -387,14 +388,14 @@ export function useOAuthFlow(options: UseOAuthFlowOptions): UseOAuthFlowResult {
   async function copyDeviceVerificationUrl(): Promise<void> {
     const value = options.state.deviceVerifyUrl.trim();
     if (!value) {
-      options.pushRuntimeEvent('No device verification URL to copy', 'warn');
+      options.pushRuntimeEvent(i18next.t('status.no_device_verification_url'), 'warn');
       return;
     }
     try {
       await writeClipboardText(value);
       flashCopyLabel('copyDeviceLabel');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to copy device verification URL';
+      const message = error instanceof Error ? error.message : i18next.t('status.failed_copy_device_url');
       options.pushRuntimeEvent(message, 'warn');
     }
   }

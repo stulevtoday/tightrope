@@ -1,4 +1,6 @@
+import i18next from 'i18next';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Account, RouteMetrics } from '../../../shared/types';
 import { RoutingPoolSortSelect, type RoutingPoolSortOption } from './RoutingPoolSortSelect';
 
@@ -38,31 +40,31 @@ type RoutingPoolSortKey =
   | 'name_asc'
   | 'plan';
 
-const ROUTING_POOL_SORT_OPTIONS: ReadonlyArray<RoutingPoolSortOption & { key: RoutingPoolSortKey }> = [
+const ROUTING_POOL_SORT_KEYS: ReadonlyArray<{ key: RoutingPoolSortKey; labelKey: string; descriptionKey: string }> = [
   {
     key: 'reset_soon',
-    label: 'Resetting soon',
-    description: 'Free uses weekly reset, paid uses hourly/5-hour reset.',
+    labelKey: 'router.pool_sort_reset_soon',
+    descriptionKey: 'router.pool_sort_reset_soon_desc',
   },
   {
     key: 'remaining_desc',
-    label: 'Most quota left',
-    description: 'Show highest remaining plan-relevant quota first.',
+    labelKey: 'router.pool_sort_most_quota',
+    descriptionKey: 'router.pool_sort_most_quota_desc',
   },
   {
     key: 'remaining_asc',
-    label: 'Least quota left',
-    description: 'Surface accounts nearest exhaustion.',
+    labelKey: 'router.pool_sort_least_quota',
+    descriptionKey: 'router.pool_sort_least_quota_desc',
   },
   {
     key: 'name_asc',
-    label: 'Name A-Z',
-    description: 'Alphabetical account name order.',
+    labelKey: 'router.pool_sort_name_az',
+    descriptionKey: 'router.pool_sort_name_az_desc',
   },
   {
     key: 'plan',
-    label: 'Plan tier',
-    description: 'Enterprise, Plus, then Free.',
+    labelKey: 'router.pool_sort_plan_tier',
+    descriptionKey: 'router.pool_sort_plan_tier_desc',
   },
 ];
 
@@ -343,6 +345,7 @@ export function RouterPoolPane({
   onUpdateLockedRoutingAccountIds,
   onOpenAddAccount,
 }: RouterPoolPaneProps) {
+  const { t } = useTranslation();
   const paneRef = useRef<HTMLElement | null>(null);
   const accountsListRef = useRef<HTMLDivElement | null>(null);
   const lockButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -361,9 +364,13 @@ export function RouterPoolPane({
 
   const primarySortKey = sortKeys[0] ?? 'reset_soon';
   const secondarySortKey = sortKeys[1] ?? null;
+  const sortOptions = useMemo(
+    () => ROUTING_POOL_SORT_KEYS.map((option) => ({ key: option.key, label: t(option.labelKey), description: t(option.descriptionKey) })),
+    [t],
+  );
   const secondarySortOptions = useMemo(
-    () => ROUTING_POOL_SORT_OPTIONS.filter((option) => option.key !== primarySortKey),
-    [primarySortKey],
+    () => sortOptions.filter((option) => option.key !== primarySortKey),
+    [sortOptions, primarySortKey],
   );
   const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
   const lockGroupOrder = useMemo(() => {
@@ -755,19 +762,19 @@ export function RouterPoolPane({
     <section className="pane object-pane" ref={paneRef}>
       <header className="section-header">
         <div>
-          <p className="eyebrow">Accounts</p>
-          <h1>Routing pool</h1>
+          <p className="eyebrow">{t('router.pool_eyebrow')}</p>
+          <h1>{t('router.pool_title')}</h1>
         </div>
         <button className="tool-btn" type="button" onClick={onOpenAddAccount}>
-          + Add
+          {t('router.pool_add')}
         </button>
       </header>
       <div className="pane-body">
         <div className="routing-pool-controls">
           <RoutingPoolSortSelect
-            label="Sort"
+            label={t('router.pool_sort_label')}
             value={primarySortKey}
-            options={[...ROUTING_POOL_SORT_OPTIONS]}
+            options={sortOptions}
             onChange={(nextKey) => {
               const nextPrimary = nextKey as RoutingPoolSortKey;
               setSortKeys((previous) => {
@@ -775,7 +782,7 @@ export function RouterPoolPane({
                 if (previousSecondary === null || previousSecondary !== nextPrimary) {
                   return previousSecondary === null ? [nextPrimary] : [nextPrimary, previousSecondary];
                 }
-                const replacement = ROUTING_POOL_SORT_OPTIONS.find((option) => option.key !== nextPrimary)?.key;
+                const replacement = sortOptions.find((option) => option.key !== nextPrimary)?.key;
                 return replacement ? [nextPrimary, replacement] : [nextPrimary];
               });
             }}
@@ -783,7 +790,7 @@ export function RouterPoolPane({
           <button
             type="button"
             className="routing-sort-plus-btn"
-            aria-label="Add secondary routing sort"
+            aria-label={t('router.pool_sort_add_secondary')}
             disabled={!canAddSecondarySort}
             onClick={() => {
               if (!canAddSecondarySort) {
@@ -801,7 +808,7 @@ export function RouterPoolPane({
           {secondarySortKey ? (
             <>
               <RoutingPoolSortSelect
-                label="Then"
+                label={t('router.pool_sort_then_label')}
                 value={secondarySortKey}
                 options={secondarySortOptions}
                 onChange={(nextKey) => setSortKeys([primarySortKey, nextKey as RoutingPoolSortKey])}
@@ -809,7 +816,7 @@ export function RouterPoolPane({
               <button
                 type="button"
                 className="routing-sort-minus-btn"
-                aria-label="Remove secondary routing sort"
+                aria-label={t('router.pool_sort_remove_secondary')}
                 onClick={() => setSortKeys([primarySortKey])}
               >
                 −
@@ -817,7 +824,7 @@ export function RouterPoolPane({
             </>
           ) : null}
         </div>
-        <span style={{ display: 'none' }}>Focus: {accounts.find((account) => account.id === selectedAccountId)?.name ?? 'all accounts'}</span>
+        <span style={{ display: 'none' }}>{t('router.pool_routed_account')}: {accounts.find((account) => account.id === selectedAccountId)?.name ?? 'all'}</span>
         <div
           className={`accounts-list${lockGroupConnected ? ' lock-group-active' : ''}${lockGroupRoutingActive ? ' lock-group-routing-active' : ''}`}
           id="accountsList"
@@ -907,7 +914,7 @@ export function RouterPoolPane({
                     <button
                       type="button"
                       className={`account-info-btn${openTooltipAccountId === account.id ? ' active' : ''}`}
-                      aria-label={`Show usage details for ${account.name}`}
+                      aria-label={t('router.pool_show_usage_details', { name: account.name })}
                       aria-expanded={openTooltipAccountId === account.id}
                       onClick={(event) => {
                         event.preventDefault();
@@ -920,7 +927,7 @@ export function RouterPoolPane({
                     <button
                       type="button"
                       className={`account-pin-btn${account.pinned ? ' pinned' : ''}`}
-                      aria-label={account.pinned ? 'Unpin account' : 'Pin account'}
+                      aria-label={account.pinned ? t('router.pool_unpin_account') : t('router.pool_pin_account')}
                       onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -936,7 +943,7 @@ export function RouterPoolPane({
                     <button
                       type="button"
                       className={`account-lock-btn${lockGrouped ? ' lock-grouped' : ''}${lockGrouped && lockGroupRoutingActive ? ' lock-group-routing' : ''}`}
-                      aria-label="Toggle routing lock group (Shift+click to multi-add)"
+                      aria-label={t('router.pool_toggle_lock_group')}
                       ref={lockButtonRef(account.id)}
                       onClick={(event) => {
                         event.preventDefault();
@@ -983,28 +990,28 @@ export function RouterPoolPane({
                   </span>
                   <span className={`account-status-meta${isRouted ? ' routed-active' : ''}`}>
                     <span className="account-plan">{account.plan}</span>
-                    {isRouted ? <span className="routed-dot routed-dot-subtle" title="Routed account" aria-hidden="true" /> : null}
+                    {isRouted ? <span className="routed-dot routed-dot-subtle" title={t('router.pool_routed_account')} aria-hidden="true" /> : null}
                   </span>
                 </div>
                 <div className="account-meta-row">
                   <span className="account-meta">
-                    {primaryWindowLabel} left <strong>{primaryRemainingLabel}</strong>
-                  </span>
-                  <span className="account-meta">{metric?.capability ? 'eligible' : 'blocked'}</span>
+{primaryWindowLabel} {t('router.pool_left')} <strong>{primaryRemainingLabel}</strong>
+                   </span>
+                   <span className="account-meta">{metric?.capability ? t('router.pool_eligible_label') : t('router.pool_blocked_label')}</span>
                 </div>
                 {weeklyRemainingLabel !== null ? (
                   <div className="account-meta-row account-meta-row-secondary">
                     <span className="account-meta">
-                      Weekly left <strong>{weeklyRemainingLabel}</strong>
+                      {t('router.pool_weekly_left')} <strong>{weeklyRemainingLabel}</strong>
                     </span>
                   </div>
                 ) : null}
                 <div className="quota-stack">
-                  <div className="mini-bar quota-track" aria-label={`${primaryWindowLabel} quota remaining`}>
+                  <div className="mini-bar quota-track" aria-label={t('router.pool_quota_remaining', { window: primaryWindowLabel })}>
                     <div className={`mini-fill quota-fill${primaryUsage !== null && primaryUsage >= 80 ? ' hot' : ''}`} style={{ width: `${primaryRemaining}%` }} />
                   </div>
                   {secondaryUsage !== null ? (
-                    <div className="mini-bar quota-track quota-secondary-track" aria-label="Weekly quota remaining">
+                    <div className="mini-bar quota-track quota-secondary-track" aria-label={t('router.pool_weekly_quota_remaining')}>
                       <div
                         className={`mini-fill quota-fill quota-fill-secondary${secondaryUsage >= 80 ? ' hot' : ''}`}
                         style={{ width: `${secondaryRemaining}%` }}
@@ -1020,29 +1027,29 @@ export function RouterPoolPane({
                   <div className="account-stats-tooltip-title">{account.name}</div>
                   <div className="account-stats-tooltip-grid">
                     <div>
-                      <span>{primaryWindowLabel} used</span>
+                      <span>{primaryWindowLabel} {t('router.pool_used')}</span>
                       <strong>{primaryUsedLabel}</strong>
                     </div>
                     {secondaryUsage !== null ? (
                       <div>
-                        <span>Weekly used</span>
+                        <span>{t('router.pool_weekly_used')}</span>
                         <strong>{secondaryUsedLabel}</strong>
                       </div>
                     ) : null}
                     <div>
-                      <span>Requests 24h</span>
+                      <span>{t('router.pool_requests_24h')}</span>
                       <strong>{Math.max(0, Math.round(account.routed24h))}</strong>
                     </div>
                     <div>
-                      <span>Latency</span>
+                      <span>{t('router.pool_latency')}</span>
                       <strong>{latencyLabel}</strong>
                     </div>
                     <div>
-                      <span>Sticky hit</span>
+                      <span>{t('router.pool_sticky_hit')}</span>
                       <strong>{stickyLabel}</strong>
                     </div>
                     <div>
-                      <span>Failovers</span>
+                      <span>{t('router.pool_failovers')}</span>
                       <strong>{failoverLabel}</strong>
                     </div>
                   </div>

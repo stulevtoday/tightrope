@@ -1,13 +1,16 @@
+import i18next from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { useAccountsContext, useNavigationContext, useSessionsContext } from '../../state/context';
 import type { StickySession } from '../../shared/types';
 
 const KIND_LABELS: Record<StickySession['kind'], string> = {
-  codex_session: 'Codex session',
-  sticky_thread: 'Sticky thread',
-  prompt_cache: 'Prompt cache',
+  codex_session: i18next.t('sessions.kind_codex_session'),
+  sticky_thread: i18next.t('sessions.kind_sticky_thread'),
+  prompt_cache: i18next.t('sessions.kind_prompt_cache'),
 };
 
 export function SessionsPage() {
+  const { t } = useTranslation();
   const navigation = useNavigationContext();
   const accounts = useAccountsContext();
   const sessions = useSessionsContext();
@@ -19,26 +22,26 @@ export function SessionsPage() {
       <div className="sessions-content">
         <header className="section-header">
           <div>
-            <p className="eyebrow">Sticky</p>
-            <h2>Sessions</h2>
+            <p className="eyebrow">{t('sessions.eyebrow')}</p>
+            <h2>{t('sessions.title')}</h2>
           </div>
           <button className="dock-btn accent" id="purgeStaleSessions" type="button" onClick={sessions.purgeStaleSessions}>
-            Purge stale
+            {t('sessions.purge_stale')}
           </button>
         </header>
         <div className="sessions-stats">
           <span>
-            <span className="stat-label">Visible rows</span>
+            <span className="stat-label">{t('sessions.visible_rows')}</span>
             <strong>{sessions.sessionsView.filtered.length}</strong>
           </span>
           <span>
-            <span className="stat-label">Stale prompt-cache</span>
+            <span className="stat-label">{t('sessions.stale_prompt_cache')}</span>
             <strong>{sessions.sessionsView.staleTotal}</strong>
           </span>
         </div>
         <div className="sessions-filter">
           <button className={`filter-btn${sessions.sessionsKindFilter === 'all' ? ' active' : ''}`} data-kind="all" type="button" onClick={() => sessions.setSessionsKindFilter('all')}>
-            All
+            {t('sessions.filter_all')}
           </button>
           <button
             className={`filter-btn${sessions.sessionsKindFilter === 'codex_session' ? ' active' : ''}`}
@@ -46,7 +49,7 @@ export function SessionsPage() {
             type="button"
             onClick={() => sessions.setSessionsKindFilter('codex_session')}
           >
-            Codex session
+            {t('sessions.filter_codex_session')}
           </button>
           <button
             className={`filter-btn${sessions.sessionsKindFilter === 'sticky_thread' ? ' active' : ''}`}
@@ -54,7 +57,7 @@ export function SessionsPage() {
             type="button"
             onClick={() => sessions.setSessionsKindFilter('sticky_thread')}
           >
-            Sticky thread
+            {t('sessions.filter_sticky_thread')}
           </button>
           <button
             className={`filter-btn${sessions.sessionsKindFilter === 'prompt_cache' ? ' active' : ''}`}
@@ -62,18 +65,18 @@ export function SessionsPage() {
             type="button"
             onClick={() => sessions.setSessionsKindFilter('prompt_cache')}
           >
-            Prompt cache
+            {t('sessions.filter_prompt_cache')}
           </button>
         </div>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Key</th>
-                <th>Kind</th>
-                <th>Account</th>
-                <th>Updated</th>
-                <th>Expiry</th>
+                <th>{t('sessions.col_key')}</th>
+                <th>{t('sessions.col_kind')}</th>
+                <th>{t('sessions.col_account')}</th>
+                <th>{t('sessions.col_updated')}</th>
+                <th>{t('sessions.col_expiry')}</th>
                 <th />
               </tr>
             </thead>
@@ -81,7 +84,7 @@ export function SessionsPage() {
               {sessions.sessionsView.paged.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="empty-state">
-                    No sticky sessions match the current filter.
+                    {t('sessions.no_matching')}
                   </td>
                 </tr>
               ) : (
@@ -105,17 +108,17 @@ export function SessionsPage() {
                         {session.stale ? (
                           <>
                             {session.expiry}
-                            <span className="stale-badge">Stale</span>
+                            <span className="stale-badge">{t('sessions.stale_badge')}</span>
                           </>
                         ) : session.expiry ? (
                           session.expiry
                         ) : (
-                          <span className="durable-label">Durable</span>
+                          <span className="durable-label">{t('sessions.durable_label')}</span>
                         )}
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <button className="btn-danger" style={{ fontSize: '11px', padding: '0.15rem 0.4rem' }} type="button">
-                          Remove
+                          {t('sessions.remove')}
                         </button>
                       </td>
                     </tr>
@@ -128,10 +131,10 @@ export function SessionsPage() {
         <div className="sessions-pagination">
           <span>{sessions.sessionsPaginationLabel}</span>
           <button type="button" disabled={!sessions.canPrevSessions} onClick={sessions.prevSessionsPage}>
-            &lsaquo; Prev
+            &lsaquo; {t('sessions.prev')}
           </button>
           <button type="button" disabled={!sessions.canNextSessions} onClick={sessions.nextSessionsPage}>
-            Next &rsaquo;
+            {t('sessions.next')} &rsaquo;
           </button>
         </div>
       </div>

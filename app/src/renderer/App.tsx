@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AccountsPage } from './components/accounts/AccountsPage';
 import { AddAccountDialog } from './components/dialogs/AddAccountDialog';
 import { AboutDialog } from './components/dialogs/AboutDialog';
@@ -24,6 +25,7 @@ interface AppProps {
 }
 
 function AppShell() {
+  const { t } = useTranslation();
   const service = useTightropeService();
   const [aboutDialogOpen, setAboutDialogOpen] = useState(false);
   const [appMeta, setAppMeta] = useState<AppMetaResponse | null>(null);
@@ -57,7 +59,7 @@ function AppShell() {
   }, [service]);
 
   return (
-    <main className="window" aria-label="tightrope routing workbench">
+    <main className="window" aria-label={`${t('titlebar.app_name')} ${t('titlebar.app_subtitle')}`}>
       <TitleBar onOpenAbout={() => setAboutDialogOpen(true)} />
       <div className="app-shell">
         <NavRail />

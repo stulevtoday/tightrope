@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { SqlImportAction, SqlImportPreviewRow } from '../../../shared/types';
 
 interface AccountImportPreviewTableProps {
@@ -27,22 +28,23 @@ export function AccountImportPreviewTable({
   importWithoutOverwrite,
   onOverrideChange,
 }: AccountImportPreviewTableProps) {
+  const { t } = useTranslation();
   return (
     <section className="account-import-preview">
       <div className="account-import-preview-header">
-        <strong>Accounts and login details delta</strong>
-        <span>{importWithoutOverwrite ? 'No-overwrite mode enabled' : 'Overwrite mode enabled'}</span>
+        <strong>{t('dialogs.account_import_preview_title')}</strong>
+        <span>{importWithoutOverwrite ? t('dialogs.account_import_preview_no_overwrite') : t('dialogs.account_import_preview_overwrite')}</span>
       </div>
       <div className="account-import-table-wrap">
         <table className="account-import-table">
           <thead>
             <tr>
-              <th>Email</th>
-              <th>Provider</th>
-              <th>Plan</th>
-              <th>Detected auth</th>
-              <th>Action</th>
-              <th>Reason</th>
+              <th>{t('dialogs.account_import_preview_email')}</th>
+              <th>{t('dialogs.account_import_preview_provider')}</th>
+              <th>{t('dialogs.account_import_preview_plan')}</th>
+              <th>{t('dialogs.account_import_preview_detected_auth')}</th>
+              <th>{t('dialogs.account_import_preview_action')}</th>
+              <th>{t('dialogs.account_import_preview_reason')}</th>
             </tr>
           </thead>
           <tbody>

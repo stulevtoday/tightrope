@@ -1,21 +1,23 @@
 import type { AppPage } from '../../shared/types';
+import { useTranslation } from 'react-i18next';
 import { useNavigationContext } from '../../state/context';
 
-const NAV_ITEMS: Array<{ page: AppPage; title: string; subtitle: string }> = [
-  { page: 'router', title: 'Router', subtitle: 'Process, bind, health' },
-  { page: 'accounts', title: 'Accounts', subtitle: 'Quota, tokens, usage' },
-  { page: 'sessions', title: 'Sessions', subtitle: 'Affinity and sticky reuse' },
-  { page: 'logs', title: 'Logs', subtitle: 'Requests and events' },
-  { page: 'settings', title: 'Settings', subtitle: 'Routing, auth, keys' },
+const NAV_ITEMS: Array<{ page: AppPage; titleKey: string; subtitleKey: string }> = [
+  { page: 'router', titleKey: 'nav.router_title', subtitleKey: 'nav.router_subtitle' },
+  { page: 'accounts', titleKey: 'nav.accounts_title', subtitleKey: 'nav.accounts_subtitle' },
+  { page: 'sessions', titleKey: 'nav.sessions_title', subtitleKey: 'nav.sessions_subtitle' },
+  { page: 'logs', titleKey: 'nav.logs_title', subtitleKey: 'nav.logs_subtitle' },
+  { page: 'settings', titleKey: 'nav.settings_title', subtitleKey: 'nav.settings_subtitle' },
 ];
 
 export function NavRail() {
+  const { t } = useTranslation();
   const navigation = useNavigationContext();
 
   return (
     <aside className="nav-rail">
-      <nav className="rail-group" aria-label="Runtime objects">
-        <p className="rail-label">Objects</p>
+      <nav className="rail-group" aria-label={t('nav.objects_label')}>
+        <p className="rail-label">{t('nav.objects_label')}</p>
         {NAV_ITEMS.map((item) => (
           <button
             key={item.page}
@@ -24,8 +26,8 @@ export function NavRail() {
             type="button"
             onClick={() => navigation.setCurrentPage(item.page)}
           >
-            <strong>{item.title}</strong>
-            <span>{item.subtitle}</span>
+            <strong>{t(item.titleKey)}</strong>
+            <span>{t(item.subtitleKey)}</span>
           </button>
         ))}
       </nav>

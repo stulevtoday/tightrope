@@ -1,7 +1,9 @@
+import { useTranslation } from 'react-i18next';
 import { useAccountsContext, useLogsContext, useNavigationContext } from '../../state/context';
 import { statusClass } from '../../state/logic';
 
 export function LogsPage() {
+  const { t } = useTranslation();
   const navigation = useNavigationContext();
   const accounts = useAccountsContext();
   const logs = useLogsContext();
@@ -13,22 +15,22 @@ export function LogsPage() {
       <div className="logs-content">
         <header className="section-header">
           <div>
-            <p className="eyebrow">Request</p>
-            <h2>Logs</h2>
+            <p className="eyebrow">{t('logs.eyebrow')}</p>
+            <h2>{t('logs.title')}</h2>
           </div>
         </header>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Request</th>
-                <th>Protocol</th>
-                <th>Model</th>
-                <th>Account</th>
-                <th>Tokens</th>
-                <th>Latency</th>
-                <th>Status</th>
+                <th>{t('logs.col_time')}</th>
+                <th>{t('logs.col_request')}</th>
+                <th>{t('logs.col_protocol')}</th>
+                <th>{t('logs.col_model')}</th>
+                <th>{t('logs.col_account')}</th>
+                <th>{t('logs.col_tokens')}</th>
+                <th>{t('logs.col_latency')}</th>
+                <th>{t('logs.col_status')}</th>
               </tr>
             </thead>
             <tbody>

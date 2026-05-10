@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import i18next from 'i18next';
 import type { TightropeService } from '../../services/tightrope';
 import type {
   ClusterStatus,
@@ -165,7 +166,7 @@ export function useClusterSync(options: UseClusterSyncOptions, config: UseCluste
       }
       setManualPeerAddress('');
       await refreshClusterState();
-      pushRuntimeEvent(`sync peer added ${peer}`, 'success');
+      pushRuntimeEvent(i18next.t('status.sync_peer_added', { peer }), 'success');
     } catch (error) {
       reportWarn(pushRuntimeEvent, error, 'Failed to add sync peer');
     }
@@ -178,7 +179,7 @@ export function useClusterSync(options: UseClusterSyncOptions, config: UseCluste
         return;
       }
       await refreshClusterState();
-      pushRuntimeEvent(`sync peer removed ${siteId}`, 'success');
+      pushRuntimeEvent(i18next.t('status.sync_peer_removed', { siteId }), 'success');
     } catch (error) {
       reportWarn(pushRuntimeEvent, error, 'Failed to remove sync peer');
     }
@@ -191,7 +192,7 @@ export function useClusterSync(options: UseClusterSyncOptions, config: UseCluste
         return;
       }
       await refreshClusterState();
-      pushRuntimeEvent('sync triggered', 'success');
+      pushRuntimeEvent(i18next.t('status.sync_triggered'), 'success');
     } catch (error) {
       reportWarn(pushRuntimeEvent, error, 'Failed to trigger sync');
     }

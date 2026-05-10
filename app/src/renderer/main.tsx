@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
+import './i18n';
 import './styles/app.css';
 
 const container = document.getElementById('app');

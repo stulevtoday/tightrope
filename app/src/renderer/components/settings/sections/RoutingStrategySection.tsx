@@ -1,4 +1,5 @@
 import type { RoutingMode, ScoringModel } from '../../../shared/types';
+import { useTranslation } from 'react-i18next';
 import { sliderTrackStyle } from '../../../shared/styles';
 
 interface RoutingStrategySectionProps {
@@ -29,18 +30,19 @@ export function RoutingStrategySection({
   onSetScoringWeight,
   onSetHeadroomWeight,
 }: RoutingStrategySectionProps) {
+  const { t } = useTranslation();
   const mode = routingModes.find((candidate) => candidate.id === routingMode) ?? routingModes[0];
 
   return (
     <div className="settings-group">
       <div className="settings-group-header">
-        <h3>Routing strategy</h3>
-        <p>Load balancing algorithm and composite scoring weights</p>
+        <h3>{t('settings.routing_strategy_title')}</h3>
+        <p>{t('settings.routing_strategy_desc')}</p>
       </div>
       <div className="setting-row">
         <div className="setting-label">
-          <strong>Strategy</strong>
-          <span>How requests are distributed across eligible accounts</span>
+          <strong>{t('settings.routing_strategy_label')}</strong>
+          <span>{t('settings.routing_strategy_sublabel')}</span>
         </div>
         <select className="setting-select" value={routingMode} onChange={(event) => onSetRoutingMode(event.target.value)}>
           {routingModes.map((candidate) => (
@@ -72,7 +74,7 @@ export function RoutingStrategySection({
 
       {mode.usesComposite && (
         <div className="composite-weights">
-          <h4>Composite score weights</h4>
+          <h4>{t('settings.composite_score_weights')}</h4>
           <div className="composite-formula">S(a,r) = α·q + β·l + γ·e + δ·(1−h) + ζ·cost + η·c</div>
           <div className="weight-grid" style={{ marginTop: '0.35rem' }}>
             {(Object.keys(WEIGHT_LABELS) as Array<keyof typeof WEIGHT_LABELS>).map((key) => (

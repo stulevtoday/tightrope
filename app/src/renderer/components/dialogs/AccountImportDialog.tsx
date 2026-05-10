@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AccountImportDialogActions } from './accountImport/AccountImportDialogActions';
 import { AccountImportDropzone } from './accountImport/AccountImportDropzone';
 import { AccountImportHero } from './accountImport/AccountImportHero';
@@ -16,6 +17,7 @@ interface AccountImportDialogProps {
 }
 
 export function AccountImportDialog({ open, importWithoutOverwrite, onClose }: AccountImportDialogProps) {
+  const { t } = useTranslation();
   const [dragOver, setDragOver] = useState(false);
   const supportsNativeBrowse = typeof window.tightrope?.pickSqlImportSourcePath === 'function';
   const {
@@ -54,8 +56,8 @@ export function AccountImportDialog({ open, importWithoutOverwrite, onClose }: A
     && !missingRequiredSourceDbPassphrase;
   const rescanEnabled = selectedPath.length > 0 && !scanning && !importing;
   const dropzoneStatusText = useMemo(() => {
-    if (scanning) return 'Scanning source database…';
-    if (importing) return 'Applying import…';
+    if (scanning) return t('dialogs.account_import_scanning');
+    if (importing) return t('dialogs.account_import_importing');
     return selectedFileName;
   }, [importing, scanning, selectedFileName]);
 
@@ -72,7 +74,7 @@ export function AccountImportDialog({ open, importWithoutOverwrite, onClose }: A
   return (
     <dialog open id="accountImportDialog" onClick={(event) => event.currentTarget === event.target && handleClose()}>
       <header className="dialog-header">
-        <h3>Account Import</h3>
+        <h3>{t('dialogs.account_import_title')}</h3>
         <button className="dialog-close" type="button" aria-label="Close" onClick={handleClose}>
           &times;
         </button>

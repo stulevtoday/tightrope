@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useTightropeService } from '../../state/context';
 
 type WindowControlAction = 'close' | 'minimize' | 'maximize';
@@ -9,6 +10,7 @@ interface TitleBarProps {
 
 export function TitleBar({ onOpenAbout }: TitleBarProps) {
   const service = useTightropeService();
+  const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
@@ -55,34 +57,34 @@ export function TitleBar({ onOpenAbout }: TitleBarProps) {
         <button
           className="titlebar-control close"
           type="button"
-          aria-label="Close window"
+          aria-label={t('titlebar.close_window')}
           onClick={() => onWindowControl('close')}
         />
         <button
           className="titlebar-control minimize"
           type="button"
-          aria-label="Minimize window"
+          aria-label={t('titlebar.minimize_window')}
           onClick={() => onWindowControl('minimize')}
         />
         <button
           className={`titlebar-control maximize${isMaximized ? ' active' : ''}`}
           type="button"
-          aria-label={isMaximized ? 'Restore window' : 'Maximize window'}
+          aria-label={isMaximized ? t('titlebar.restore_window') : t('titlebar.maximize_window')}
           onClick={() => onWindowControl('maximize')}
         />
       </div>
 
       <div className="titlecopy">
-        <strong>tightrope</strong>
-        <span>routing workbench</span>
+        <strong>{t('titlebar.app_name')}</strong>
+        <span>{t('titlebar.app_subtitle')}</span>
       </div>
       <div className="titlebar-spacer" />
       {onOpenAbout ? (
         <button
           className="titlebar-action"
           type="button"
-          aria-label="About tightrope"
-          title="About tightrope"
+          aria-label={t('titlebar.about_tightrope')}
+          title={t('titlebar.about_tightrope')}
           onClick={onOpenAbout}
         >
           <svg
@@ -101,7 +103,7 @@ export function TitleBar({ onOpenAbout }: TitleBarProps) {
             <line x1="12" y1="11" x2="12" y2="16" />
             <circle cx="12" cy="8" r="0.8" fill="currentColor" />
           </svg>
-          <span className="titlebar-action-label">About</span>
+          <span className="titlebar-action-label">{t('titlebar.about')}</span>
         </button>
       ) : null}
     </header>

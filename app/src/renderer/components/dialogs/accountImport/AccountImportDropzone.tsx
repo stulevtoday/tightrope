@@ -1,4 +1,5 @@
 import type { DragEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface AccountImportDropzoneProps {
   dragOver: boolean;
@@ -27,6 +28,7 @@ export function AccountImportDropzone({
   onSelectFile,
   onBrowseRequested,
 }: AccountImportDropzoneProps) {
+  const { t } = useTranslation();
   return (
     <label
       className={`account-import-drop file-drop${dragOver ? ' dragover' : ''}${disabled ? ' disabled' : ''}`}
@@ -54,9 +56,9 @@ export function AccountImportDropzone({
         onSelectFile(firstDroppedFile(event));
       }}
     >
-      <p>Drop SQLite database here or click to browse</p>
+      <p>{t('dialogs.account_import_drop_text')}</p>
       <small>
-        Accepted formats: <span className="mono">.sqlite</span>, <span className="mono">.sqlite3</span>, <span className="mono">.db</span>
+        {t('dialogs.account_import_drop_formats')} <span className="mono">.sqlite</span>, <span className="mono">.sqlite3</span>, <span className="mono">.db</span>
       </small>
       <input
         id="accountImportFileInput"

@@ -533,17 +533,20 @@ export async function backendStopRequest(): Promise<RuntimeBackendStateResponse>
   return coerceRuntimeBackendStateResponse(response);
 }
 
-export async function importAccountRequest(email: string, provider: string): Promise<RuntimeAccount> {
+export async function importAccountRequest(email: string, provider: string, accessToken?: string, refreshToken?: string): Promise<RuntimeAccount> {
+  const payload: Record<string, string> = { email, provider };
+  if (accessToken) payload.access_token = accessToken;
+  if (refreshToken) payload.refresh_token = refreshToken;
   const api = window.tightrope;
   if (api?.importAccount) {
-    const response = await api.importAccount({ email, provider });
+    const response = await api.importAccount(payload);
     const account = coerceRuntimeAccount(response);
     if (account) {
       return account;
     }
     throw new Error('Malformed account payload');
   }
-  const response = await postJson<RuntimeAccount>('/api/accounts/import', { email, provider });
+  const response = await postJson<RuntimeAccount>('/api/accounts/import', payload);
   const account = coerceRuntimeAccount(response);
   if (account) {
     return account;

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import i18next from 'i18next';
 import type { TightropeService } from '../../services/tightrope';
 import type { FirewallIpEntry, FirewallMode } from '../../shared/types';
 import { reportWarn } from '../errors';
@@ -52,7 +53,7 @@ export function useFirewall(options: UseFirewallOptions): UseFirewallResult {
       }
       setFirewallDraftIpAddress('');
       await refreshFirewallIps();
-      options.pushRuntimeEvent(`firewall allowlist added ${candidate}`, 'success');
+      options.pushRuntimeEvent(i18next.t('status.firewall_ip_added', { ip: candidate }), 'success');
     } catch (error) {
       reportWarn(options.pushRuntimeEvent, error, 'Failed to add firewall IP');
     }
@@ -65,7 +66,7 @@ export function useFirewall(options: UseFirewallOptions): UseFirewallResult {
         return;
       }
       await refreshFirewallIps();
-      options.pushRuntimeEvent(`firewall allowlist removed ${ipAddress}`, 'success');
+      options.pushRuntimeEvent(i18next.t('status.firewall_ip_removed', { ip: ipAddress }), 'success');
     } catch (error) {
       reportWarn(options.pushRuntimeEvent, error, 'Failed to remove firewall IP');
     }

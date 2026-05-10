@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAccountsContext } from '../../state/context';
 import { getCurrentStatusNotice, subscribeStatusNotice } from '../../state/statusNotices';
 
@@ -39,6 +40,7 @@ function formatBytes(value: number): string {
 }
 
 export function StatusBar() {
+  const { t } = useTranslation();
   const accounts = useAccountsContext();
   const [notice, setNotice] = useState(getCurrentStatusNotice);
   const [sessionTraffic, setSessionTraffic] = useState<TrafficTotals>({ upBytes: 0, downBytes: 0 });
@@ -127,7 +129,7 @@ export function StatusBar() {
     <footer className="statusbar" role="status" aria-live={notice.level === 'error' ? 'assertive' : 'polite'}>
       <span className={`status-dot ${notice.level}`} aria-hidden="true" />
       <div className="status-well">
-        <span className="status-label">Status</span>
+        <span className="status-label">{t('status.label')}</span>
         {notice.renderMode === 'progress' && progress ? (
           <div
             className="status-progress"
@@ -146,7 +148,7 @@ export function StatusBar() {
           </span>
         )}
       </div>
-      <span className="status-traffic" aria-label={`Sent ${txText}, received ${rxText}`}>
+      <span className="status-traffic" aria-label={t('status.sent_received', { tx: txText, rx: rxText })}>
         <span
           key={`send-dot-${sendPulseVersion}`}
           className={`status-traffic-dot send${sendActive ? ' active' : ''}`}

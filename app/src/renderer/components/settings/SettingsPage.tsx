@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AccountImportDialog } from '../dialogs/AccountImportDialog';
 import { useNavigationContext, useSettingsContext } from '../../state/context';
 import { AccountImportSection } from './sections/AccountImportSection';
@@ -12,6 +13,7 @@ import { RoutingStrategySection } from './sections/RoutingStrategySection';
 export function SettingsPage() {
   const navigation = useNavigationContext();
   const settings = useSettingsContext();
+  const { t } = useTranslation();
   const [accountImportDialogOpen, setAccountImportDialogOpen] = useState(false);
 
   if (navigation.currentPage !== 'settings') return null;
@@ -21,12 +23,12 @@ export function SettingsPage() {
       <div className="settings-scroll">
         <header className="section-header">
           <div>
-            <p className="eyebrow">Configuration</p>
-            <h2>Settings</h2>
+            <p className="eyebrow">{t('settings.eyebrow')}</p>
+            <h2>{t('settings.title')}</h2>
           </div>
           <div className="settings-page-actions">
             <span className={`settings-dirty-pill${settings.settingsDirty ? ' active' : ''}`}>
-              {settings.settingsDirty ? 'Unsaved changes' : 'All changes saved'}
+              {settings.settingsDirty ? t('settings.unsaved_changes') : t('settings.all_changes_saved')}
             </span>
             <button
               className="dock-btn"
@@ -34,7 +36,7 @@ export function SettingsPage() {
               disabled={!settings.settingsDirty || settings.settingsSaving}
               onClick={settings.discardSettings}
             >
-              Discard
+              {t('settings.discard')}
             </button>
             <button
               className="dock-btn accent"
@@ -42,7 +44,7 @@ export function SettingsPage() {
               disabled={!settings.settingsDirty || settings.settingsSaving}
               onClick={settings.saveSettings}
             >
-              {settings.settingsSaving ? 'Saving…' : 'Save'}
+              {settings.settingsSaving ? t('settings.saving') : t('settings.save')}
             </button>
           </div>
         </header>

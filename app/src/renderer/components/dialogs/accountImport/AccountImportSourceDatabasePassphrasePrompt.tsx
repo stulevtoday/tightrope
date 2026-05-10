@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 interface AccountImportSourceDatabasePassphrasePromptProps {
   value: string;
   required: boolean;
@@ -11,23 +13,24 @@ export function AccountImportSourceDatabasePassphrasePrompt({
   disabled,
   onChange,
 }: AccountImportSourceDatabasePassphrasePromptProps) {
+  const { t } = useTranslation();
   return (
     <section className="account-import-source-key">
       <div className="account-import-source-key-header">
-        <strong>Source database password</strong>
-        {required && <span>Required for encrypted source database</span>}
+        <strong>{t('dialogs.account_import_source_db_pass_title')}</strong>
+        {required && <span>{t('dialogs.account_import_source_db_pass_required')}</span>}
       </div>
       <input
         className="dock-input account-import-source-key-input"
         type="password"
         spellCheck={false}
         autoComplete="off"
-        placeholder="Enter source database password"
+        placeholder={t('dialogs.account_import_source_db_pass_placeholder')}
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       />
-      <small>Enter the password for the imported database, then run Rescan.</small>
+      <small>{t('dialogs.account_import_source_db_pass_hint')}</small>
     </section>
   );
 }

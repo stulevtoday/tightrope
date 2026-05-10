@@ -3,6 +3,10 @@
   "version-semver": "0.1.0",
   "builtin-baseline": "b5d1a94fb7f88fd835e360fd23a45a09ceedbf48",
   "dependencies": [
+    {
+      "name": "vcpkg-cmake-get-vars",
+      "host": true
+    },
     "nuraft",
     "uwebsockets",
     "mbedtls",
@@ -10,8 +14,19 @@
     "boost-beast",
     "boost-log",
     "boost-uuid",
-    { "name": "sqlcipher", "features": ["json1", "fts5"] },
-    { "name": "sqlitecpp", "features": ["sqlcipher"] },
+    {
+      "name": "sqlcipher",
+      "features": [
+        "json1",
+        "fts5"
+      ]
+    },
+    {
+      "name": "sqlitecpp",
+      "features": [
+        "sqlcipher"
+      ]
+    },
     "glaze",
     "lz4",
     "libsodium",
@@ -27,6 +42,9 @@
     "openssl",
     "curl",
     "catch2",
-    { "name": "libgnutls", "platform": "!windows" }
+    {
+      "name": "libgnutls",
+      "platform": "!windows"
+    }
   ]
 }

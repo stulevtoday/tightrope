@@ -1,7 +1,9 @@
+import { useTranslation } from 'react-i18next';
 import { useAccountsContext, useLogsContext, useRouterDerivedContext } from '../../state/context';
 import { statusClass } from '../../state/logic';
 
 export function RequestDrawer() {
+  const { t } = useTranslation();
   const accounts = useAccountsContext();
   const logs = useLogsContext();
   const derived = useRouterDerivedContext();
@@ -17,7 +19,7 @@ export function RequestDrawer() {
   }
 
   const account = accounts.accounts.find((candidate) => candidate.id === row.accountId) ?? accounts.accounts[0];
-  const accountName = account?.name ?? row.accountId ?? 'unassigned';
+  const accountName = account?.name ?? row.accountId ?? t('drawer.unassigned');
   const scored = accounts.accounts
     .map((candidate) => {
       const metric = derived.metrics.get(candidate.id);
@@ -35,77 +37,77 @@ export function RequestDrawer() {
       <aside className={`log-drawer${open ? ' open' : ''}`}>
         <header className="section-header">
           <div>
-            <p className="eyebrow">Request</p>
+            <p className="eyebrow">{t('drawer.eyebrow')}</p>
             <h2>{row.id}</h2>
           </div>
-          <button className="dialog-close" type="button" aria-label="Close" onClick={logs.closeDrawer}>
+          <button className="dialog-close" type="button" aria-label={t('common.close')} onClick={logs.closeDrawer}>
             &times;
           </button>
         </header>
         <div className="drawer-body">
           <div className="drawer-section">
-            <div className="drawer-section-header">Request</div>
+            <div className="drawer-section-header">{t('drawer.section_request')}</div>
             <dl className="drawer-kv">
-              <dt>ID</dt>
+              <dt>{t('drawer.col_id')}</dt>
               <dd>{row.id}</dd>
               {row.requestedAt ? (
                 <>
-                  <dt>Requested At</dt>
+                  <dt>{t('drawer.col_requested_at')}</dt>
                   <dd>{row.requestedAt}</dd>
                 </>
               ) : null}
-              <dt>Time</dt>
+              <dt>{t('drawer.col_time')}</dt>
               <dd>{row.time}</dd>
               {row.method ? (
                 <>
-                  <dt>Method</dt>
+                  <dt>{t('drawer.col_method')}</dt>
                   <dd>{row.method}</dd>
                 </>
               ) : null}
               {row.path ? (
                 <>
-                  <dt>Path</dt>
+                  <dt>{t('drawer.col_path')}</dt>
                   <dd>{row.path}</dd>
                 </>
               ) : null}
-              <dt>Protocol</dt>
+              <dt>{t('drawer.col_protocol')}</dt>
               <dd>{row.protocol}</dd>
-              <dt>Model</dt>
+              <dt>{t('drawer.col_model')}</dt>
               <dd>{row.model}</dd>
-              <dt>Account</dt>
+              <dt>{t('drawer.col_account')}</dt>
               <dd>{accountName}</dd>
-              <dt>Tokens</dt>
+              <dt>{t('drawer.col_tokens')}</dt>
               <dd>{accounts.formatNumber(row.tokens)}</dd>
-              <dt>Latency</dt>
+              <dt>{t('drawer.col_latency')}</dt>
               <dd>{row.latency} ms</dd>
               {typeof row.statusCode === 'number' ? (
                 <>
-                  <dt>Status Code</dt>
+                  <dt>{t('drawer.col_status_code')}</dt>
                   <dd>{row.statusCode}</dd>
                 </>
               ) : null}
-              <dt>Status</dt>
+              <dt>{t('drawer.col_status')}</dt>
               <dd>
                 <span className={`status-badge ${statusClass(row.status)}`}>{row.status}</span>
               </dd>
               {row.errorCode ? (
                 <>
-                  <dt>Error Code</dt>
+                  <dt>{t('drawer.col_error_code')}</dt>
                   <dd>{row.errorCode}</dd>
                 </>
               ) : null}
-              <dt>Session</dt>
+              <dt>{t('drawer.col_session')}</dt>
               <dd>{row.sessionId}</dd>
             </dl>
           </div>
 
           <div className="drawer-section">
-            <div className="drawer-section-header">Routing decision</div>
+            <div className="drawer-section-header">{t('drawer.section_routing_decision')}</div>
             <table className="scoring-table">
               <thead>
                 <tr>
-                  <th>Account</th>
-                  <th>Score</th>
+                  <th>{t('drawer.col_account')}</th>
+                  <th>{t('router.inspector_score')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -113,7 +115,7 @@ export function RequestDrawer() {
                   <tr key={entry.name} className={entry.picked ? 'picked' : ''}>
                     <td>
                       {entry.name}
-                      {entry.picked ? ' ←' : ''}
+                      {entry.picked ? ` ${t('drawer.picked_arrow')}` : ''}
                     </td>
                     <td style={{ fontFamily: "'SF Mono',ui-monospace,monospace", fontSize: '11px' }}>
                       {Number.isFinite(entry.score) ? entry.score.toFixed(4) : '∞'}

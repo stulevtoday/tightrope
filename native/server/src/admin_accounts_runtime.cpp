@@ -442,7 +442,11 @@ void wire_accounts_routes(uWS::App& app) {
             }
             const auto email = json_string(*parsed, "email").value_or("");
             const auto provider = json_string(*parsed, "provider").value_or("");
-            const auto response = controllers::import_account(email, provider);
+            const auto access_token = json_string(*parsed, "access_token");
+            const auto refresh_token = json_string(*parsed, "refresh_token");
+            const auto response = (access_token.has_value() || refresh_token.has_value())
+                ? controllers::import_account_with_tokens(email, provider, access_token.value_or(""), refresh_token.value_or(""))
+                : controllers::import_account(email, provider);
             if (response.status == 201) {
                 http::write_json(res, 201, account_json(response.account));
                 return;

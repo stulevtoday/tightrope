@@ -44,7 +44,14 @@ function stringField(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }
 
-export function extractImportAccountPayload(raw: unknown): { email: string; provider: string } | null {
+export interface ImportAccountPayload {
+  email: string;
+  provider: string;
+  access_token?: string;
+  refresh_token?: string;
+}
+
+export function extractImportAccountPayload(raw: unknown): ImportAccountPayload | null {
   if (!raw || typeof raw !== 'object') {
     return null;
   }
@@ -64,11 +71,16 @@ export function extractImportAccountPayload(raw: unknown): { email: string; prov
     stringField(nestedAccount?.email) ??
     stringField(nestedUser?.email) ??
     stringField(nestedAccounts?.email);
-  const fallbackTokenSeed =
+  const refreshToken =
     stringField(object.refresh_token) ??
+    stringField(nestedAccount?.refresh_token);
+  const accessToken =
     stringField(object.access_token) ??
+    stringField(nestedAccount?.access_token);
+  const fallbackTokenSeed =
+    refreshToken ??
+    accessToken ??
     stringField(object.token) ??
-    stringField(nestedAccount?.refresh_token) ??
     stringField(nestedAccount?.access_token);
   const resolvedEmail =
     email ??
@@ -82,7 +94,10 @@ export function extractImportAccountPayload(raw: unknown): { email: string; prov
     stringField(nestedUser?.provider) ??
     stringField(nestedAccounts?.provider) ??
     'openai';
-  return { email: resolvedEmail, provider };
+  const result: ImportAccountPayload = { email: resolvedEmail, provider };
+  if (accessToken) result.access_token = accessToken;
+  if (refreshToken) result.refresh_token = refreshToken;
+  return result;
 }
 
 export function readFileText(file: File): Promise<string> {

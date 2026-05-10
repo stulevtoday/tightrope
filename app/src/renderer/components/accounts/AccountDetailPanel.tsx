@@ -1,3 +1,5 @@
+import i18next from 'i18next';
+import { useTranslation } from 'react-i18next';
 import type { Account } from '../../shared/types';
 
 interface AccountDetailPanelProps {
@@ -125,7 +127,7 @@ function usageRowsFromAccount(detail: Account): UsageRow[] {
       rows.push({
         key: 'short',
         source: shortWindow.source,
-        label: '5h remaining',
+        label: i18next.t('router.pool_5h_remaining'),
         trendLabel: '5h',
         usedPercent: shortWindow.usedPercent,
         resetAtMs: shortWindow.resetAtMs,
@@ -144,7 +146,7 @@ function usageRowsFromAccount(detail: Account): UsageRow[] {
     rows.push({
       key: 'weekly',
       source: weeklyWindow.source,
-      label: 'Weekly remaining',
+      label: i18next.t('router.pool_weekly_remaining'),
       trendLabel: 'Weekly',
       usedPercent: weeklyWindow.usedPercent,
       resetAtMs: weeklyWindow.resetAtMs,
@@ -156,7 +158,7 @@ function usageRowsFromAccount(detail: Account): UsageRow[] {
     rows.push({
       key: 'weekly',
       source: fallbackWindow.source,
-      label: 'Weekly remaining',
+      label: i18next.t('router.pool_weekly_remaining'),
       trendLabel: 'Weekly',
       usedPercent: fallbackWindow.usedPercent,
       resetAtMs: fallbackWindow.resetAtMs,
@@ -168,28 +170,28 @@ function usageRowsFromAccount(detail: Account): UsageRow[] {
 
 function usageResetLabel(resetAtMs: number | null): string {
   if (resetAtMs === null) {
-    return 'Reset time unavailable';
+    return i18next.t('accounts.detail_reset_time_unavailable');
   }
   const remainingMs = resetAtMs - Date.now();
   if (remainingMs <= 0) {
-    return 'Resetting soon';
+    return i18next.t('accounts.detail_resetting_soon');
   }
 
   const totalMinutes = Math.floor(remainingMs / 60_000);
   if (totalMinutes < 1) {
-    return 'Resets in <1m';
+    return i18next.t('accounts.detail_resets_in_under_1m');
   }
 
   const days = Math.floor(totalMinutes / (24 * 60));
   const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
   const minutes = totalMinutes % 60;
   if (days > 0) {
-    return `Resets in ${days}d ${hours}h`;
+    return i18next.t('accounts.detail_resets_in_dh', { d: days, h: hours });
   }
   if (hours > 0) {
-    return `Resets in ${hours}h ${minutes}m`;
+    return i18next.t('accounts.detail_resets_in_hm', { h: hours, m: minutes });
   }
-  return `Resets in ${minutes}m`;
+  return i18next.t('accounts.detail_resets_in_m', { m: minutes });
 }
 
 export function AccountDetailPanel({
@@ -207,6 +209,7 @@ export function AccountDetailPanel({
   onReactivateAccount,
   onDeleteAccount,
 }: AccountDetailPanelProps) {
+  const { t } = useTranslation();
   const detail = selectedAccountDetail;
   const hasTelemetry = detail?.telemetryBacked ?? false;
   const detailUpActive = detail != null &&
@@ -218,18 +221,18 @@ export function AccountDetailPanel({
   const usageRows = detail ? usageRowsFromAccount(detail) : [];
   const tokenRefreshRequired = detail?.usageRefreshStatus === 'auth_required' || detail?.needsTokenRefresh === true;
   const tokenStateClass = tokenRefreshRequired ? 'token-warn' : 'token-ok';
-  const accessTokenStateLabel = tokenRefreshRequired ? 'refresh required' : 'stored encrypted locally';
+  const accessTokenStateLabel = tokenRefreshRequired ? t('accounts.detail_refresh_required') : t('accounts.detail_stored_encrypted_locally');
   const refreshTokenStateLabel = tokenRefreshRequired
-    ? 'refresh recommended'
-    : 'stored encrypted locally (auto-refresh on 401)';
-  const idTokenStateLabel = tokenRefreshRequired ? 'pending refresh' : 'stored encrypted locally';
+    ? t('accounts.detail_refresh_recommended')
+    : t('accounts.detail_stored_encrypted_locally_auto');
+  const idTokenStateLabel = tokenRefreshRequired ? t('accounts.detail_pending_refresh') : t('accounts.detail_stored_encrypted_locally');
 
   return (
     <div className="accounts-detail" id="accountDetailPanel">
       <header className="section-header">
         <div>
-          <p className="eyebrow">Detail</p>
-          <h2>{detail?.name ?? 'Select an account'}</h2>
+          <p className="eyebrow">{t('accounts.detail_eyebrow')}</p>
+          <h2>{detail?.name ?? t('accounts.detail_select_account')}</h2>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           {detail && (
@@ -244,33 +247,33 @@ export function AccountDetailPanel({
       <div className="detail-content">
         {!detail ? (
           <div className="empty-detail">
-            <strong>Select an account</strong>
-            <span>Choose an account from the list to view details</span>
+            <strong>{t('accounts.detail_select_account')}</strong>
+            <span>{t('accounts.detail_choose_account')}</span>
           </div>
         ) : (
           <>
             <div className="detail-card">
               <div className="detail-card-header">
-                <h4>Usage</h4>
+                <h4>{t('accounts.detail_usage_title')}</h4>
                 <button
                   className="btn-secondary"
                   type="button"
                   onClick={onRefreshUsageTelemetry}
                   disabled={isRefreshingUsageTelemetry}
                 >
-                  {isRefreshingUsageTelemetry ? 'Refreshing...' : 'Refresh usage'}
+                  {isRefreshingUsageTelemetry ? t('accounts.detailRefreshing') : t('accounts.detail_refresh_usage')}
                 </button>
               </div>
               {usageRows.length === 0 ? (
                 <div className="usage-bar-row">
                   <div className="usage-label-row">
-                    <span>Usage telemetry</span>
+                    <span>{t('accounts.detail_usage_telemetry')}</span>
                     <span>—</span>
                   </div>
                   <div className="usage-bar">
                     <div className="usage-fill" style={{ width: '0%' }} />
                   </div>
-                  <span className="usage-reset">No DB usage telemetry yet</span>
+                  <span className="usage-reset">{t('accounts.detail_no_db_telemetry')}</span>
                 </div>
               ) : (
                 usageRows.map((row) => {
@@ -284,7 +287,7 @@ export function AccountDetailPanel({
                       <div className="usage-bar">
                         <div className="usage-fill" style={{ width: `${hasTelemetry ? remainingPercent : 0}%` }} />
                       </div>
-                      <span className="usage-reset">{hasTelemetry ? usageResetLabel(row.resetAtMs) : 'No DB usage telemetry yet'}</span>
+                      <span className="usage-reset">{hasTelemetry ? usageResetLabel(row.resetAtMs) : t('accounts.detail_no_db_telemetry')}</span>
                     </div>
                   );
                 })
@@ -292,7 +295,7 @@ export function AccountDetailPanel({
             </div>
 
             <div className="detail-card">
-              <h4>7-day usage trend</h4>
+              <h4>{t('accounts.detail_7day_trend')}</h4>
               {hasTelemetry && usageRows.length > 0 ? (
                 <>
                   {usageRows.map((row) => (
@@ -306,27 +309,27 @@ export function AccountDetailPanel({
                 </>
               ) : (
                 <div className="empty-detail">
-                  <span>No historical usage telemetry in DB yet</span>
+                  <span>{t('accounts.detail_no_historical_telemetry')}</span>
                 </div>
               )}
             </div>
 
             <div className="detail-card">
-              <h4>Request usage</h4>
+              <h4>{t('accounts.detail_request_usage')}</h4>
               <div className="request-stats">
                 <div className="request-stat">
-                  <span>Requests</span>
+                  <span>{t('accounts.detail_requests')}</span>
                   {formatNumber(accountUsage24h.requests)}
                 </div>
                 <div className="request-stat">
-                  <span>Tokens</span>
+                  <span>{t('accounts.detail_tokens')}</span>
                   {formatNumber(accountUsage24h.tokens)}
                 </div>
                 <div className="request-stat">
-                  <span>Cost</span>{`$${accountUsage24h.costUsd.toFixed(2)}`}
+                  <span>{t('accounts.detail_cost')}</span>{`$${accountUsage24h.costUsd.toFixed(2)}`}
                 </div>
                 <div className="request-stat">
-                  <span>Failovers</span>
+                  <span>{t('accounts.detail_failovers')}</span>
                   {formatNumber(accountUsage24h.failovers)}
                 </div>
               </div>
@@ -334,7 +337,7 @@ export function AccountDetailPanel({
 
             <div className="detail-card">
               <div className="detail-card-header">
-                <h4>Token status</h4>
+                <h4>{t('accounts.detail_token_status')}</h4>
                 {tokenRefreshRequired ? (
                   <button
                     className="btn-secondary"
@@ -342,16 +345,16 @@ export function AccountDetailPanel({
                     onClick={onRefreshToken}
                     disabled={isRefreshingToken}
                   >
-                    {isRefreshingToken ? 'Refreshing token...' : 'Refresh token'}
+                    {isRefreshingToken ? t('accounts.detail_refreshing_token') : t('accounts.detail_refresh_token')}
                   </button>
                 ) : null}
               </div>
               <dl className="token-grid">
-                <dt>Access</dt>
+                <dt>{t('accounts.detail_access')}</dt>
                 <dd className={tokenStateClass}>{accessTokenStateLabel}</dd>
-                <dt>Refresh</dt>
+                <dt>{t('accounts.detail_refresh')}</dt>
                 <dd className={tokenStateClass}>{refreshTokenStateLabel}</dd>
-                <dt>ID token</dt>
+                <dt>{t('accounts.detail_id_token')}</dt>
                 <dd className={tokenStateClass}>{idTokenStateLabel}</dd>
               </dl>
             </div>
@@ -359,20 +362,20 @@ export function AccountDetailPanel({
             <div className="account-actions">
               {detail.state === 'paused' ? (
                 <button className="dock-btn accent" type="button" onClick={onReactivateAccount}>
-                  Resume
+                  {t('accounts.detail_resume')}
                 </button>
               ) : (
                 <button className="dock-btn" type="button" onClick={onPauseAccount}>
-                  Pause
+                  {t('accounts.detail_pause')}
                 </button>
               )}
               {detail.state === 'deactivated' && (
                 <button className="dock-btn" type="button">
-                  Re-authenticate
+                  {t('accounts.detail_re_authenticate')}
                 </button>
               )}
               <button className="btn-danger" type="button" onClick={onDeleteAccount}>
-                Delete
+                {t('accounts.detail_delete')}
               </button>
             </div>
           </>

@@ -396,6 +396,36 @@ AccountMutationResponse import_account(const std::string_view email, const std::
     };
 }
 
+AccountMutationResponse import_account_with_tokens(const std::string_view email, const std::string_view provider, const std::string_view access_token, const std::string_view refresh_token, sqlite3* db) {
+    auto handle = open_controller_db(db);
+    if (handle.db == nullptr) {
+        return {
+            .status = 500,
+            .code = "db_unavailable",
+            .message = "Database unavailable",
+        };
+    }
+
+    db::OauthAccountUpsert upsert;
+    upsert.email = std::string(email);
+    upsert.provider = std::string(provider);
+    upsert.access_token_encrypted = std::string(access_token);
+    upsert.refresh_token_encrypted = std::string(refresh_token);
+
+    const auto result = db::upsert_oauth_account(handle.db, upsert);
+    if (!result.has_value()) {
+        return {
+            .status = 400,
+            .code = "invalid_account_import",
+            .message = "Failed to import account with tokens",
+        };
+    }
+    return {
+        .status = 201,
+        .account = to_payload(*result),
+    };
+}
+
 AccountMutationResponse pin_account(const std::string_view account_id, sqlite3* db) {
     auto handle = open_controller_db(db);
     if (handle.db == nullptr) {

@@ -79,6 +79,7 @@ struct AccountTokenMigrationResponse {
 
 AccountsResponse list_accounts(sqlite3* db = nullptr);
 AccountMutationResponse import_account(std::string_view email, std::string_view provider, sqlite3* db = nullptr);
+AccountMutationResponse import_account_with_tokens(std::string_view email, std::string_view provider, std::string_view access_token, std::string_view refresh_token, sqlite3* db = nullptr);
 AccountMutationResponse pin_account(std::string_view account_id, sqlite3* db = nullptr);
 AccountMutationResponse unpin_account(std::string_view account_id, sqlite3* db = nullptr);
 AccountMutationResponse pause_account(std::string_view account_id, sqlite3* db = nullptr);

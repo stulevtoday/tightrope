@@ -1,3 +1,5 @@
+import i18next from 'i18next';
+import { useTranslation } from 'react-i18next';
 import type { Account } from '../../shared/types';
 
 interface AccountsSidebarProps {
@@ -134,7 +136,7 @@ function accountStateBadgeClass(state: Account['state']): string {
 
 function accountAttentionReason(account: Account): string | null {
   if (account.usageRefreshStatus === 'auth_required' || account.needsTokenRefresh === true) {
-    return 'Token refresh required';
+    return i18next.t('accounts.sidebar_token_refresh_required');
   }
 
   return null;
@@ -154,12 +156,13 @@ export function AccountsSidebar({
   onFilterStatus,
   onSelectDetail,
 }: AccountsSidebarProps) {
+  const { t } = useTranslation();
   return (
     <div className="accounts-sidebar">
       <header className="section-header">
         <div>
-          <p className="eyebrow">Imported</p>
-          <h2>Accounts</h2>
+          <p className="eyebrow">{t('accounts.sidebar_eyebrow')}</p>
+          <h2>{t('accounts.sidebar_title')}</h2>
         </div>
         <div className="accounts-header-actions">
           <button
@@ -170,10 +173,10 @@ export function AccountsSidebar({
               void onRefreshAllTelemetry();
             }}
           >
-            {isRefreshingAllTelemetry ? 'Refreshing…' : 'Refresh all'}
+            {isRefreshingAllTelemetry ? t('accounts.sidebar_refreshing') : t('accounts.sidebar_refresh_all')}
           </button>
           <button className="tool-btn" type="button" onClick={onOpenAddAccount}>
-            + Add
+            {t('accounts.sidebar_add')}
           </button>
         </div>
       </header>
@@ -181,25 +184,25 @@ export function AccountsSidebar({
         <input
           className="search"
           type="search"
-          placeholder="Search accounts..."
-          aria-label="Search accounts"
+          placeholder={t('accounts.sidebar_search_placeholder')}
+          aria-label={t('accounts.sidebar_search_label')}
           value={accountSearchQuery}
           onChange={(event) => onSearch(event.target.value)}
         />
-        <select value={accountStatusFilter} aria-label="Filter by status" onChange={(event) => onFilterStatus(event.target.value as AccountsSidebarProps['accountStatusFilter'])}>
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="rate_limited">Rate limited</option>
-          <option value="quota_blocked">Quota blocked</option>
-          <option value="deactivated">Deactivated</option>
+        <select value={accountStatusFilter} aria-label={t('accounts.sidebar_filter_label')} onChange={(event) => onFilterStatus(event.target.value as AccountsSidebarProps['accountStatusFilter'])}>
+          <option value="">{t('accounts.sidebar_filter_all')}</option>
+          <option value="active">{t('accounts.sidebar_filter_active')}</option>
+          <option value="paused">{t('accounts.sidebar_filter_paused')}</option>
+          <option value="rate_limited">{t('accounts.sidebar_filter_rate_limited')}</option>
+          <option value="quota_blocked">{t('accounts.sidebar_filter_quota_blocked')}</option>
+          <option value="deactivated">{t('accounts.sidebar_filter_deactivated')}</option>
         </select>
       </div>
       <div className="pane-body">
         <div className="accounts-list">
           {filteredAccounts.length === 0 ? (
             <div className="empty-detail">
-              <span>No matching accounts</span>
+              <span>{t('accounts.sidebar_no_matching')}</span>
             </div>
           ) : (
             filteredAccounts.map((account) => {
@@ -249,7 +252,7 @@ export function AccountsSidebar({
                         <span
                           className="attention-sign"
                           role="img"
-                          aria-label={`Needs attention: ${attentionReason}`}
+                          aria-label={t('accounts.sidebar_needs_attention', { reason: attentionReason })}
                           title={attentionReason}
                         >
                           <span className="attention-sign-mark">!</span>
@@ -265,25 +268,25 @@ export function AccountsSidebar({
                   </div>
                   <div className="account-meta-row">
                     <span className="account-meta">
-                      {primaryWindowLabel} left <strong>{primaryRemainingLabel}</strong>
+                      {primaryWindowLabel} {t('router.pool_left')} <strong>{primaryRemainingLabel}</strong>
                     </span>
                   </div>
                   {weeklyRemainingLabel !== null ? (
                     <div className="account-meta-row account-meta-row-secondary">
                       <span className="account-meta">
-                        Weekly left <strong>{weeklyRemainingLabel}</strong>
+                        {t('router.pool_weekly_left')} <strong>{weeklyRemainingLabel}</strong>
                       </span>
                     </div>
                   ) : null}
                   <div className="quota-stack">
-                    <div className="mini-bar quota-track" aria-label={`${primaryWindowLabel} quota remaining`}>
+                    <div className="mini-bar quota-track" aria-label={t('router.pool_quota_remaining', { window: primaryWindowLabel })}>
                       <div
                         className={`mini-fill quota-fill${primaryUsage !== null && primaryUsage >= 80 ? ' hot' : ''}`}
                         style={{ width: `${primaryRemaining}%` }}
                       />
                     </div>
                     {secondaryUsage !== null ? (
-                      <div className="mini-bar quota-track quota-secondary-track" aria-label="Weekly quota remaining">
+                      <div className="mini-bar quota-track quota-secondary-track" aria-label={t('router.pool_weekly_quota_remaining')}>
                         <div
                           className={`mini-fill quota-fill quota-fill-secondary${secondaryUsage >= 80 ? ' hot' : ''}`}
                           style={{ width: `${secondaryRemaining}%` }}

@@ -1,4 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import i18next from 'i18next';
 import type { TightropeService } from '../../services/tightrope';
 import type { AppRuntimeState, OauthStatusResponse } from '../../shared/types';
 import { buildListenerUrl, nowStamp } from '../logic';
@@ -74,24 +75,24 @@ export function createOAuthFlowBrowserActions(deps: OAuthFlowBrowserActionDeps):
           deps.applyOauthStatus(status);
           callbackUrl = status.callbackUrl ?? callbackUrl;
           if (status.status === 'error') {
-            throw new Error(status.errorMessage ?? 'Browser OAuth failed');
+            throw new Error(status.errorMessage ?? i18next.t('dialogs.oauth_browser_failed'));
           }
           if (status.status === 'success') {
             await deps.finalizeOauthAccountSuccess(
               callbackUrl,
               deepLinkUrl,
-              'browser oauth completed and account imported',
+              i18next.t('status.browser_oauth_completed'),
               { autoClose: true, requireAccountVisible: true },
             );
             return;
           }
         } catch (error) {
-          lastError = error instanceof Error ? error.message : 'Failed to verify OAuth status after callback';
+          lastError = error instanceof Error ? error.message : i18next.t('dialogs.oauth_verify_failed');
         }
         await sleep(OAUTH_DEEP_LINK_RETRY_MS);
       }
 
-      const message = lastError ?? 'OAuth callback was received, but completion was not confirmed';
+      const message = lastError ?? i18next.t('dialogs.oauth_callback_not_confirmed');
       deps.setAddAccountErrorState(message, { syncFlowError: false });
     } finally {
       deps.oauthDeepLinkFinalizeInFlightRef.current = false;
@@ -111,10 +112,10 @@ export function createOAuthFlowBrowserActions(deps: OAuthFlowBrowserActionDeps):
           ? response.authorizationUrl
           : null;
         deps.setState((previous) => applyOauthListenerStartedState(previous, callbackUrl, authorizationUrl));
-        deps.pushRuntimeEvent(`callback URL generated: ${callbackUrl}`);
+        deps.pushRuntimeEvent(i18next.t('status.callback_url_generated', { url: callbackUrl }));
         return authorizationUrl;
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Failed to start OAuth browser flow';
+        const message = error instanceof Error ? error.message : i18next.t('dialogs.oauth_start_failed');
         deps.setState((previous) => applyOauthListenerErrorState(previous, message));
         deps.pushRuntimeEvent(message, 'warn');
         return null;
@@ -142,13 +143,13 @@ export function createOAuthFlowBrowserActions(deps: OAuthFlowBrowserActionDeps):
         await deps.finalizeOauthAccountSuccess(
           status.callbackUrl ?? null,
           `oauth-${Date.now().toString(36)}`,
-          'browser oauth completed and account imported',
-        );
-        return;
-      }
-      if (status.status === 'error') {
-        deps.stopBrowserOauthPolling();
-        const message = status.errorMessage ?? 'Browser OAuth failed';
+'browser oauth completed and account imported',
+         );
+         return;
+       }
+       if (status.status === 'error') {
+         deps.stopBrowserOauthPolling();
+         const message = status.errorMessage ?? i18next.t('dialogs.oauth_browser_failed');
         deps.setAddAccountErrorState(message);
         return;
       }
@@ -188,7 +189,7 @@ export function createOAuthFlowBrowserActions(deps: OAuthFlowBrowserActionDeps):
     } catch {
       deps.setState((previous) => applyOauthListenerStoppedState(previous));
     }
-    deps.pushRuntimeEvent('callback listener stopped');
+    deps.pushRuntimeEvent(i18next.t('status.callback_listener_stopped'));
   }
 
   async function restartListener(): Promise<void> {
@@ -197,9 +198,9 @@ export function createOAuthFlowBrowserActions(deps: OAuthFlowBrowserActionDeps):
       const response = await deps.oauthRestartRequest();
       const callbackUrl = response.callbackUrl ?? buildListenerUrl(DEFAULT_OAUTH_CALLBACK_PORT, '/auth/callback');
       deps.setState((previous) => applyOauthListenerStartedState(previous, callbackUrl, response.authorizationUrl));
-      deps.pushRuntimeEvent('callback listener restarted', 'success');
+      deps.pushRuntimeEvent(i18next.t('status.callback_listener_restarted'), 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to restart callback listener';
+      const message = error instanceof Error ? error.message : i18next.t('dialogs.oauth_restart_listener_failed');
       deps.setState((previous) => applyOauthListenerErrorState(previous, message));
       deps.pushRuntimeEvent(message, 'warn');
     }
@@ -209,7 +210,7 @@ export function createOAuthFlowBrowserActions(deps: OAuthFlowBrowserActionDeps):
     try {
       const status = await deps.oauthStatusRequest();
       deps.applyOauthStatus(status);
-      deps.pushRuntimeEvent(`oauth status: ${status.status}`);
+      deps.pushRuntimeEvent(i18next.t('status.oauth_status', { status: status.status }));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to fetch OAuth status';
       deps.setState((previous) => applyOauthListenerErrorState(previous, message));

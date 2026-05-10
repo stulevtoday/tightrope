@@ -1,16 +1,16 @@
+import { useTranslation } from 'react-i18next';
+
 export function AccountImportHero() {
+  const { t } = useTranslation();
   return (
     <section className="account-import-hero">
-      <p className="account-import-eyebrow">Data import</p>
-      <strong>Import accounts from a SQLite workspace snapshot</strong>
-      <span>
-        Drop a <code className="mono">.sqlite</code> or <code className="mono">.db</code> file, inspect account and login deltas, then
-        apply only reviewed changes.
-      </span>
+      <p className="account-import-eyebrow">{t('dialogs.account_import_hero_eyebrow')}</p>
+      <strong>{t('dialogs.account_import_hero_title')}</strong>
+      <span>{t('dialogs.account_import_hero_desc')}</span>
       <div className="account-import-flow">
-        <span>1. Select source DB</span>
-        <span>2. Review account deltas</span>
-        <span>3. Import selected rows</span>
+        <span>{t('dialogs.account_import_hero_step1')}</span>
+        <span>{t('dialogs.account_import_hero_step2')}</span>
+        <span>{t('dialogs.account_import_hero_step3')}</span>
       </div>
     </section>
   );
