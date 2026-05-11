@@ -11,6 +11,7 @@ export function DatabaseSecuritySection() {
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   async function submitChange(): Promise<void> {
     setErrorMessage(null);
@@ -45,6 +46,25 @@ export function DatabaseSecuritySection() {
       setErrorMessage(message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleExportDatabase(): Promise<void> {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setExporting(true);
+    try {
+      const result = await service.exportDatabaseRequest();
+      if (result.success) {
+        setSuccessMessage(t('settings.db_export_success'));
+      } else if (result.error && result.error !== 'cancelled') {
+        setErrorMessage(t('settings.db_export_failed') + ': ' + result.error);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settings.db_export_failed');
+      setErrorMessage(message);
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -89,6 +109,17 @@ export function DatabaseSecuritySection() {
           />
           <button className="dock-btn accent" type="button" onClick={() => void submitChange()} disabled={saving}>
             {saving ? t('settings.db_updating') : t('settings.db_change_password_button')}
+          </button>
+        </div>
+      </div>
+      <div className="setting-row">
+        <div className="setting-label">
+          <strong>{t('settings.db_export_database')}</strong>
+          <span>{t('settings.db_export_database_desc')}</span>
+        </div>
+        <div className="setting-inline-fields">
+          <button className="dock-btn accent" type="button" onClick={() => void handleExportDatabase()} disabled={exporting}>
+            {exporting ? t('settings.db_exporting') : t('settings.db_export_button')}
           </button>
         </div>
       </div>

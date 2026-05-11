@@ -57,6 +57,7 @@ export interface TightropeService {
   getSettingsRequest: () => Promise<DashboardSettings | null>;
   updateSettingsRequest: (update: DashboardSettingsUpdate) => Promise<DashboardSettings | null>;
   changeDatabasePassphraseRequest: (currentPassphrase: string, nextPassphrase: string) => Promise<void>;
+  exportDatabaseRequest: () => Promise<{ success: boolean; error?: string }>;
   listFirewallIpsRequest: () => Promise<FirewallListResponse | null>;
   addFirewallIpRequest: (ipAddress: string) => Promise<boolean>;
   removeFirewallIpRequest: (ipAddress: string) => Promise<boolean>;
@@ -716,6 +717,14 @@ export async function changeDatabasePassphraseRequest(
   await api.changeDatabasePassphrase({ currentPassphrase, nextPassphrase });
 }
 
+export async function exportDatabaseRequest(): Promise<{ success: boolean; error?: string }> {
+  const api = window.tightrope;
+  if (!api?.exportDatabase) {
+    return { success: false, error: 'Database export is unavailable' };
+  }
+  return api.exportDatabase();
+}
+
 export async function listFirewallIpsRequest(): Promise<FirewallListResponse | null> {
   const api = window.tightrope;
   if (!api?.listFirewallIps) {
@@ -893,6 +902,7 @@ export function createTightropeService(): TightropeService {
     getSettingsRequest,
     updateSettingsRequest,
     changeDatabasePassphraseRequest,
+    exportDatabaseRequest,
     listFirewallIpsRequest,
     addFirewallIpRequest,
     removeFirewallIpRequest,

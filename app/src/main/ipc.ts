@@ -1,6 +1,9 @@
 // IPC handlers: renderer <-> main <-> native module
+import fs from 'node:fs';
+import path from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { native } from './native';
+import { resolveDatabasePath, savePassphraseToKeychain as savePassphrase, deleteSavedPassphrase as deletePassphrase } from './databasePassphrase';
 
 const runtimeBaseUrl = process.env.TIGHTROPE_RUNTIME_URL ?? 'http://127.0.0.1:2455';
 
@@ -130,13 +133,19 @@ export function registerIpcHandlers(): void {
       body: JSON.stringify(update ?? {}),
     }, 30000),
   );
-  ipcMain.handle('database:change-passphrase', (_event, payload: unknown) =>
-    runtimeRequest('/api/settings/database/passphrase', {
+  ipcMain.handle('database:change-passphrase', async (_event, payload: unknown) => {
+    const result = await runtimeRequest('/api/settings/database/passphrase', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload ?? {}),
-    }, 30000),
-  );
+    }, 30000);
+    const typedPayload = payload as { nextPassphrase?: string } | null;
+    if (typedPayload?.nextPassphrase) {
+      const dbPath = resolveDatabasePath();
+      savePassphrase(dbPath, typedPayload.nextPassphrase);
+    }
+    return result;
+  });
   ipcMain.handle('oauth:start', (_event, payload: unknown) =>
     runtimeRequest('/api/oauth/start', {
       method: 'POST',
@@ -352,5 +361,45 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('window:is-maximized', (event) => {
     return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+  });
+
+  ipcMain.handle('database:export', async () => {
+    const parentWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    const result = await dialog.showSaveDialog(parentWindow ?? undefined, {
+      title: 'Export Database',
+      defaultPath: 'tightrope-backup.db',
+      filters: [{ name: 'SQLite Database', extensions: ['db', 'sqlite', 'sqlite3'] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'cancelled' };
+    }
+
+    const dbPath = resolveDatabasePath();
+    if (!fs.existsSync(dbPath)) {
+      return { success: false, error: 'Database file not found' };
+    }
+
+    const destPath = result.filePath;
+    const filesToCopy = [dbPath];
+    for (const ext of ['-wal', '-shm']) {
+      const sidecar = dbPath + ext;
+      if (fs.existsSync(sidecar)) {
+        filesToCopy.push(sidecar);
+      }
+    }
+
+    try {
+      const destDir = path.dirname(destPath);
+      fs.mkdirSync(destDir, { recursive: true });
+      for (const src of filesToCopy) {
+        const suffix = src === dbPath ? '' : src.slice(dbPath.length);
+        const finalDest = destPath + suffix;
+        fs.copyFileSync(src, finalDest);
+      }
+      return { success: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, error: message };
+    }
   });
 }

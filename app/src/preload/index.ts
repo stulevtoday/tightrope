@@ -169,6 +169,7 @@ contextBridge.exposeInMainWorld('tightrope', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (update: unknown) => ipcRenderer.invoke('settings:update', update),
   changeDatabasePassphrase: (payload: unknown) => ipcRenderer.invoke('database:change-passphrase', payload),
+  exportDatabase: () => ipcRenderer.invoke('database:export'),
   oauthStart: (payload?: unknown) => ipcRenderer.invoke('oauth:start', payload),
   oauthStatus: () => ipcRenderer.invoke('oauth:status'),
   oauthStop: () => ipcRenderer.invoke('oauth:stop'),

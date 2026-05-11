@@ -1,17 +1,68 @@
-build/
-build-debug/
 node_modules/
+build/
 dist/
-*.node
-.DS_Store
-compile_commands.json
+release/
+.vscode/
+.idea/
+
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+auth.json
+.env
+.env.*
+
+app/native/*.node
+
 vcpkg_installed/
-vcpkg/
-.local-py/
-.electron-dev/
-build-electron/
-build-electron-debug/
-app/release/
-app/native/
-.cache
-store.db
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Build
+build/
+build-*/
+dist/
+release/
+out/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+compile_commands.json
+
+# vcpkg
+vcpkg_installed/
+vcpkg/buildtrees/
+vcpkg/packages/
+vcpkg/downloads/
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Secrets
+.env
+.env.*
+auth.json
+
+# Native binaries
+*.node
+*.dylib
+*.so
+*.a
+
+# IDE
+.vscode/
+.idea/

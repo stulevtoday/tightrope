@@ -241,7 +241,7 @@ export function AccountDetailPanel({
               <span className={`traffic-arrow down${detailDownActive ? ' active' : ''}`}>↓</span>
             </span>
           )}
-          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: "'SF Mono',ui-monospace,monospace" }}>{detail?.id ?? ''}</span>
+          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontFamily: "'SF Mono',ui-monospace,monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{detail?.id ?? ''}</span>
         </div>
       </header>
       <div className="detail-content">

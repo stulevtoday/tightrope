@@ -585,6 +585,7 @@ export interface ElectronApi {
   getSettings: () => Promise<DashboardSettings>;
   updateSettings: (update: DashboardSettingsUpdate) => Promise<DashboardSettings>;
   changeDatabasePassphrase: (payload: { currentPassphrase: string; nextPassphrase: string }) => Promise<{ status: string }>;
+  exportDatabase: () => Promise<{ success: boolean; error?: string }>;
   oauthStart: (payload?: { forceMethod?: string }) => Promise<OauthStartResponse>;
   oauthStatus: () => Promise<OauthStatusResponse>;
   oauthStop: () => Promise<OauthStatusResponse>;

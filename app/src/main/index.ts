@@ -9,6 +9,8 @@ import {
   isDatabasePassphraseCancelledError,
   promptForUnlockPassphrase,
   requestDatabasePassphrase,
+  savePassphraseToKeychain,
+  deleteSavedPassphrase,
 } from './databasePassphrase';
 import { native } from './native';
 import { registerIpcHandlers, submitOauthManualCallback } from './ipc';
@@ -53,10 +55,9 @@ function shouldAutoOpenDevTools(): boolean {
 }
 
 if (isDevSession) {
-  // Use Electron defaults in dev; overriding session/user data paths can break
-  // process bootstrap on some macOS setups.
   const devUserDataPath = path.resolve(process.cwd(), '.electron-dev');
   fs.mkdirSync(devUserDataPath, { recursive: true });
+  app.setPath('userData', devUserDataPath);
 }
 
 function isTightropeDeepLink(value: string): boolean {
@@ -333,13 +334,18 @@ app.whenReady().then(async () => {
         db_passphrase: sessionDbPassphrase,
       });
       nativeInitialized = true;
+      savePassphraseToKeychain(databasePath, sessionDbPassphrase);
       break;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const unlockFailed = message.toLowerCase().includes('database unlock failed');
       if (databasePassphraseMode !== 'unlock' || !unlockFailed || attempt + 1 >= maxUnlockAttempts) {
+        if (unlockFailed) {
+          deleteSavedPassphrase(databasePath);
+        }
         throw error;
       }
+      deleteSavedPassphrase(databasePath);
       sessionDbPassphrase = await promptForUnlockPassphrase('Unable to unlock database with that password.');
     }
   }
@@ -352,7 +358,7 @@ app.whenReady().then(async () => {
     width: 1540,
     height: 940,
     frame: false,
-    icon: process.platform === 'darwin' ? undefined : windowIcon,
+    icon: app.isPackaged && process.platform === 'darwin' ? undefined : windowIcon,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,

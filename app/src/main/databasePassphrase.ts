@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
 
 export type DatabasePassphraseMode = 'setup' | 'unlock';
 
@@ -44,12 +44,65 @@ interface PassphrasePromptResult {
 
 const SQLITE_PLAINTEXT_HEADER = Buffer.from('SQLite format 3\0', 'utf8');
 const DB_PROMPT_DEBUG = process.env.TIGHTROPE_DB_PROMPT_DEBUG === '1' || Boolean(process.env.VITE_DEV_SERVER_URL);
+const PASSPHRASE_KEY_FILE = '.passphrase-key';
 
 function debugPrompt(message: string): void {
   if (!DB_PROMPT_DEBUG) {
     return;
   }
   console.info(`[tightrope][db-passphrase] ${message}`);
+}
+
+function passphraseKeyPath(dbPath: string): string {
+  return dbPath + PASSPHRASE_KEY_FILE;
+}
+
+function savePassphrase(dbPath: string, passphrase: string): void {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      debugPrompt('safeStorage encryption unavailable, skipping passphrase save');
+      return;
+    }
+    const encrypted = safeStorage.encryptString(passphrase);
+    const keyPath = passphraseKeyPath(dbPath);
+    fs.writeFileSync(keyPath, encrypted);
+    debugPrompt(`passphrase saved to ${keyPath}`);
+  } catch (err) {
+    debugPrompt(`failed to save passphrase: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function loadPassphrase(dbPath: string): string | null {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      debugPrompt('safeStorage encryption unavailable, cannot load passphrase');
+      return null;
+    }
+    const keyPath = passphraseKeyPath(dbPath);
+    if (!fs.existsSync(keyPath)) {
+      debugPrompt(`no saved passphrase at ${keyPath}`);
+      return null;
+    }
+    const encrypted = fs.readFileSync(keyPath);
+    const passphrase = safeStorage.decryptString(encrypted);
+    debugPrompt('passphrase loaded from saved key');
+    return passphrase;
+  } catch (err) {
+    debugPrompt(`failed to load passphrase: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+export function deleteSavedPassphrase(dbPath: string): void {
+  try {
+    const keyPath = passphraseKeyPath(dbPath);
+    if (fs.existsSync(keyPath)) {
+      fs.unlinkSync(keyPath);
+      debugPrompt(`deleted saved passphrase at ${keyPath}`);
+    }
+  } catch (err) {
+    debugPrompt(`failed to delete saved passphrase: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 function escapeHtml(value: string): string {
@@ -61,15 +114,12 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function resolveDatabasePath(): string {
+export function resolveDatabasePath(): string {
   const configured = process.env.TIGHTROPE_DB_PATH?.trim();
   if (configured && configured.length > 0) {
     return path.resolve(configured);
   }
-  if (app.isPackaged) {
-    return path.join(app.getPath('userData'), 'store.db');
-  }
-  return path.resolve(process.cwd(), 'store.db');
+  return path.join(app.getPath('userData'), 'store.db');
 }
 
 function detectDatabaseState(dbPath: string): DatabaseState {
@@ -552,12 +602,42 @@ export async function requestDatabasePassphrase(): Promise<DatabasePassphraseSel
   const state = detectDatabaseState(dbPath);
 
   if (state === 'encrypted') {
+    const savedPassphrase = loadPassphrase(dbPath);
+    if (savedPassphrase !== null) {
+      debugPrompt('attempting unlock with saved passphrase');
+      return {
+        dbPath,
+        mode: 'unlock',
+        passphrase: savedPassphrase,
+      };
+    }
     const passphrase = await promptForUnlockPassphrase();
     return {
       dbPath,
       mode: 'unlock',
       passphrase,
     };
+  }
+
+  if (state === 'missing') {
+    const confirmed = await dialog.showMessageBox({
+      type: 'question',
+      title: 'New Database',
+      message: 'No existing database found.',
+      detail:
+        'A new encrypted database will be created at:\n\n' +
+        dbPath +
+        '\n\n' +
+        'If you already have a database, make sure it is at this path before continuing. ' +
+        'Creating a new database will start fresh with no accounts.',
+      buttons: ['Create New Database', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (confirmed.response !== 0) {
+      throw new DatabasePassphraseCancelledError('setup');
+    }
   }
 
   const passphrase = await promptForSetupPassphrase(state === 'plaintext');
@@ -567,3 +647,5 @@ export async function requestDatabasePassphrase(): Promise<DatabasePassphraseSel
     passphrase,
   };
 }
+
+export { savePassphrase as savePassphraseToKeychain };
