@@ -12,11 +12,14 @@ release/
 *.sqlite3
 
 auth.json
+accounts.txt
 .env
 .env.*
 
 app/native/*.node
+app/.electron-dev/
 
+vcpkg/
 vcpkg_installed/
 
 # macOS
