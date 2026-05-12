@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
-const { chromium } = require('playwright');
+const { createRequire } = require('node:module');
 const { readFile } = require('node:fs/promises');
-const { resolve } = require('node:path');
+const { join, resolve } = require('node:path');
 const tls = require('node:tls');
 const net = require('node:net');
+
+const appRequire = createRequire(join(__dirname, '..', 'app', 'package.json'));
+const { chromium } = appRequire('playwright');
 
 const TIGHTROPE_API = 'http://127.0.0.1:2455';
 
@@ -634,7 +637,7 @@ async function main() {
 
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
     console.log(`
-Usage: node bulk-add-accounts.mjs <accounts-file.txt> [options]
+Usage: node bulk-add-accounts.cjs <accounts-file.txt> [options]
 
 File format (one account per line):
   email:password:emailPassword:backupEmail:backupEmailPassword
@@ -670,8 +673,8 @@ Options:
   --timeout N   Total timeout per account in seconds (default: 240)
 
 Examples:
-  node bulk-add-accounts.mjs accounts.txt
-  node bulk-add-accounts.mjs accounts.txt --timeout 300
+  node bulk-add-accounts.cjs accounts.txt
+  node bulk-add-accounts.cjs accounts.txt --timeout 300
 `);
     process.exit(0);
   }

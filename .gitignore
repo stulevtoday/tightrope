@@ -18,7 +18,6 @@ vcpkg_installed/
 
 # Electron local runtime data
 app/.electron-dev/
-app/bulk-add-accounts.cjs
 
 # Databases
 *.db
