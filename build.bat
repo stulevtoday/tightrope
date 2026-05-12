@@ -237,6 +237,8 @@ call :resolve_vcvars_arch
 if errorlevel 1 exit /b %ERRORLEVEL%
 call "%VSCONFIG%" %VCVARS_ARCH%
 if errorlevel 1 goto setup_error_vcvars
+where cl.exe >nul 2>nul
+if errorlevel 1 goto setup_error_cl_missing
 
 set "VCPKG_VISUAL_STUDIO_PATH=%VS_INSTALL%"
 if exist "%VS_INSTALL%\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe" (
@@ -251,12 +253,40 @@ exit /b 0
 
 :setup_error_not_found
 echo [build.bat] Error: Could not locate a Visual Studio installation with C++ tools.
-echo [build.bat] Install Visual Studio 2019 or newer, or Build Tools, with the "Desktop development with C++" workload.
+call :print_msvc_install_help
 exit /b 1
 
 :setup_error_vcvars
 echo [build.bat] Error: Failed to initialize the Visual Studio developer environment.
+call :print_msvc_install_help
 exit /b 1
+
+:setup_error_cl_missing
+echo [build.bat] Error: Visual Studio initialized, but cl.exe was not found on PATH.
+call :print_msvc_install_help
+exit /b 1
+
+:print_msvc_install_help
+echo.
+echo [build.bat] Install or modify Visual Studio with C++ tools:
+echo [build.bat]   winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart"
+echo.
+echo [build.bat] Or use Visual Studio Installer:
+echo [build.bat]   1. Open Visual Studio Installer
+echo [build.bat]   2. Choose Modify
+echo [build.bat]   3. Enable Desktop development with C++
+echo [build.bat]   4. Make sure these are included:
+echo [build.bat]      - MSVC C++ build tools
+echo [build.bat]      - Windows 10/11 SDK
+echo [build.bat]      - C++ CMake tools for Windows
+echo.
+echo [build.bat] Then open a new terminal and rerun:
+echo [build.bat]   build.bat setup
+echo [build.bat]   build.bat native
+echo.
+echo [build.bat] Verify Visual Studio C++ detection with:
+echo [build.bat]   "%%ProgramFiles(x86)%%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+exit /b 0
 
 :resolve_vcvars_arch
 set "VCVARS_ARCH=%PROCESSOR_ARCHITECTURE%"

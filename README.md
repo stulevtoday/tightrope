@@ -315,6 +315,27 @@ The admin API exposes preview and apply routes for importing accounts from exter
 
 ## 11. Troubleshooting
 
+### Windows MSVC tools not detected
+
+If `build.bat setup` or `build.bat native` cannot find `vcvarsall.bat` or `cl.exe`, install or modify Visual Studio with the Desktop development with C++ workload.
+
+```bat
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart"
+```
+
+In Visual Studio Installer, choose Modify and enable Desktop development with C++. Make sure MSVC C++ build tools, the Windows 10/11 SDK, and C++ CMake tools for Windows are included. Then open a new terminal and rerun:
+
+```bat
+build.bat setup
+build.bat native
+```
+
+To verify detection:
+
+```bat
+"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+```
+
 ### Native module not found
 
 Run `./build.sh native` or `cd app && npm run ensure:native:release` and verify a `tightrope-core.node` exists in `build` or `build-electron-debug` depending on mode.
