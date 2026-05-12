@@ -369,15 +369,6 @@ WHERE response_id = ?1
 LIMIT 1;
 )SQL";
 
-    constexpr const char* kAnyScopeSql = R"SQL(
-SELECT account_id
-FROM proxy_response_continuity
-WHERE response_id = ?1
-  AND expires_at_ms > ?2
-ORDER BY updated_at_ms DESC, rowid DESC
-LIMIT 1;
-)SQL";
-
     try {
         SQLite::Statement stmt(*handle.db, kSql);
         stmt.bind(1, std::string(response_id));
@@ -389,22 +380,7 @@ LIMIT 1;
                 return account;
             }
         }
-
-        if (!api_key_scope.empty()) {
-            return std::nullopt;
-        }
-
-        SQLite::Statement fallback_stmt(*handle.db, kAnyScopeSql);
-        fallback_stmt.bind(1, std::string(response_id));
-        fallback_stmt.bind(2, now_ms);
-        if (!fallback_stmt.executeStep() || fallback_stmt.getColumn(0).isNull()) {
-            return std::nullopt;
-        }
-        const auto fallback_account = fallback_stmt.getColumn(0).getString();
-        if (fallback_account.empty()) {
-            return std::nullopt;
-        }
-        return fallback_account;
+        return std::nullopt;
     } catch (...) {
         return std::nullopt;
     }

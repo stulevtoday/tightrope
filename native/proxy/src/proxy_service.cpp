@@ -457,35 +457,34 @@ ProxyJsonResult collect_responses_json(
     auto bridged_headers = inbound_headers;
     const auto turn_state = session::ensure_turn_state_header(bridged_headers);
     static_cast<void>(turn_state);
-    const auto& request_body = raw_request_body;
     const bool backend_codex_route = route == "/backend-api/codex/responses";
-    const bool continuation_request = session::request_has_previous_response_id(request_body);
-    const bool continuation_contains_function_call_output =
-        continuation_request && session::request_contains_function_call_output(request_body);
 
-    const auto affinity = session::resolve_sticky_affinity(request_body, bridged_headers);
+    const auto affinity = session::resolve_sticky_affinity(raw_request_body, bridged_headers);
+    const auto continuation_guard =
+        internal::guard_backend_codex_previous_response(route, raw_request_body, bridged_headers, affinity);
+    const auto& request_body = continuation_guard.request_body;
+    const bool continuation_request = continuation_guard.continuation_request;
+    const bool continuation_contains_function_call_output = continuation_guard.contains_function_call_output;
     bool sticky_reused = affinity.from_persistence;
-    const auto preferred_account_id =
-        session::resolve_preferred_account_id_from_previous_response(request_body, bridged_headers);
-    const auto continuity_account_id =
-        continuation_request ? session::resolve_continuity_account_id(bridged_headers) : std::nullopt;
+    const auto& preferred_account_id = continuation_guard.preferred_account_id;
+    const auto& continuity_account_id = continuation_guard.continuity_account_id;
     if (continuation_request &&
-        ((preferred_account_id.has_value() && !preferred_account_id->empty()) ||
-         (continuity_account_id.has_value() && !continuity_account_id->empty()))) {
+        (internal::optional_string_has_value(preferred_account_id) ||
+         internal::optional_string_has_value(continuity_account_id))) {
         sticky_reused = true;
     }
     std::string access_token;
     std::string traffic_account_id;
     auto resolved_affinity = affinity;
-    const bool strict_preferred = continuation_request;
     std::string credential_preference;
-    if (preferred_account_id.has_value() && !preferred_account_id->empty()) {
+    if (internal::optional_string_has_value(preferred_account_id)) {
         credential_preference = *preferred_account_id;
-    } else if (continuity_account_id.has_value() && !continuity_account_id->empty()) {
+    } else if (internal::optional_string_has_value(continuity_account_id)) {
         credential_preference = *continuity_account_id;
     } else if (!continuation_request || !affinity.account_id.empty()) {
         credential_preference = affinity.account_id;
     }
+    const bool strict_preferred = continuation_request && !credential_preference.empty();
 
     if (const auto credentials = session::resolve_upstream_account_credentials(
             credential_preference,
@@ -1289,35 +1288,34 @@ ProxySseResult stream_responses_sse(
     auto bridged_headers = inbound_headers;
     const auto turn_state = session::ensure_turn_state_header(bridged_headers);
     static_cast<void>(turn_state);
-    const auto& request_body = raw_request_body;
     const bool backend_codex_route = route == "/backend-api/codex/responses";
-    const bool continuation_request = session::request_has_previous_response_id(request_body);
-    const bool continuation_contains_function_call_output =
-        continuation_request && session::request_contains_function_call_output(request_body);
 
-    const auto affinity = session::resolve_sticky_affinity(request_body, bridged_headers);
+    const auto affinity = session::resolve_sticky_affinity(raw_request_body, bridged_headers);
+    const auto continuation_guard =
+        internal::guard_backend_codex_previous_response(route, raw_request_body, bridged_headers, affinity);
+    const auto& request_body = continuation_guard.request_body;
+    const bool continuation_request = continuation_guard.continuation_request;
+    const bool continuation_contains_function_call_output = continuation_guard.contains_function_call_output;
     bool sticky_reused = affinity.from_persistence;
-    const auto preferred_account_id =
-        session::resolve_preferred_account_id_from_previous_response(request_body, bridged_headers);
-    const auto continuity_account_id =
-        continuation_request ? session::resolve_continuity_account_id(bridged_headers) : std::nullopt;
+    const auto& preferred_account_id = continuation_guard.preferred_account_id;
+    const auto& continuity_account_id = continuation_guard.continuity_account_id;
     if (continuation_request &&
-        ((preferred_account_id.has_value() && !preferred_account_id->empty()) ||
-         (continuity_account_id.has_value() && !continuity_account_id->empty()))) {
+        (internal::optional_string_has_value(preferred_account_id) ||
+         internal::optional_string_has_value(continuity_account_id))) {
         sticky_reused = true;
     }
     std::string access_token;
     std::string traffic_account_id;
     auto resolved_affinity = affinity;
-    const bool strict_preferred = continuation_request;
     std::string credential_preference;
-    if (preferred_account_id.has_value() && !preferred_account_id->empty()) {
+    if (internal::optional_string_has_value(preferred_account_id)) {
         credential_preference = *preferred_account_id;
-    } else if (continuity_account_id.has_value() && !continuity_account_id->empty()) {
+    } else if (internal::optional_string_has_value(continuity_account_id)) {
         credential_preference = *continuity_account_id;
     } else if (!continuation_request || !affinity.account_id.empty()) {
         credential_preference = affinity.account_id;
     }
+    const bool strict_preferred = continuation_request && !credential_preference.empty();
 
     if (const auto credentials = session::resolve_upstream_account_credentials(
             credential_preference,

@@ -679,37 +679,40 @@ ProxyWsResult proxy_responses_websocket(
     const auto response_create_request = prepared_payload.mode == WebsocketPayloadMode::NormalizeResponseCreate;
     const auto& bridged_request_body = prepared_payload.body;
     const bool backend_codex_route = route == "/backend-api/codex/responses";
-    const bool continuation_request =
-        response_create_request && session::request_has_previous_response_id(bridged_request_body);
-    const bool continuation_contains_function_call_output =
-        continuation_request && session::request_contains_function_call_output(bridged_request_body);
 
     session::StickyAffinityResolution resolved_affinity;
+    internal::ContinuationRequestGuard continuation_guard;
+    const std::string* effective_request_body = &bridged_request_body;
+    bool continuation_request = false;
+    bool continuation_contains_function_call_output = false;
     bool sticky_reused = false;
     std::string access_token;
     std::string traffic_account_id;
     if (response_create_request) {
         const auto affinity = session::resolve_sticky_affinity(bridged_request_body, bridged_headers);
+        continuation_guard =
+            internal::guard_backend_codex_previous_response(route, bridged_request_body, bridged_headers, affinity);
+        effective_request_body = &continuation_guard.request_body;
+        continuation_request = continuation_guard.continuation_request;
+        continuation_contains_function_call_output = continuation_guard.contains_function_call_output;
         sticky_reused = affinity.from_persistence;
-        const auto preferred_account_id =
-            session::resolve_preferred_account_id_from_previous_response(bridged_request_body, bridged_headers);
-        const auto continuity_account_id =
-            continuation_request ? session::resolve_continuity_account_id(bridged_headers) : std::nullopt;
+        const auto& preferred_account_id = continuation_guard.preferred_account_id;
+        const auto& continuity_account_id = continuation_guard.continuity_account_id;
         if (continuation_request &&
-            ((preferred_account_id.has_value() && !preferred_account_id->empty()) ||
-             (continuity_account_id.has_value() && !continuity_account_id->empty()))) {
+            (internal::optional_string_has_value(preferred_account_id) ||
+             internal::optional_string_has_value(continuity_account_id))) {
             sticky_reused = true;
         }
         resolved_affinity = affinity;
-        const bool strict_preferred = continuation_request;
         std::string credential_preference;
-        if (preferred_account_id.has_value() && !preferred_account_id->empty()) {
+        if (internal::optional_string_has_value(preferred_account_id)) {
             credential_preference = *preferred_account_id;
-        } else if (continuity_account_id.has_value() && !continuity_account_id->empty()) {
+        } else if (internal::optional_string_has_value(continuity_account_id)) {
             credential_preference = *continuity_account_id;
         } else if (!continuation_request || !affinity.account_id.empty()) {
             credential_preference = affinity.account_id;
         }
+        const bool strict_preferred = continuation_request && !credential_preference.empty();
 
         if (const auto credentials = session::resolve_upstream_account_credentials(
                 credential_preference,
@@ -748,7 +751,7 @@ ProxyWsResult proxy_responses_websocket(
     } else {
         try {
             plan = openai::build_responses_websocket_request_plan(
-                bridged_request_body,
+                *effective_request_body,
                 bridged_headers,
                 access_token,
                 resolved_affinity.account_id,
@@ -757,7 +760,7 @@ ProxyWsResult proxy_responses_websocket(
             plan.preserve_upstream_websocket_session = backend_codex_route;
         } catch (const std::exception& error) {
             const auto capture_path =
-                capture_invalid_payload_snapshot(route, bridged_request_body, bridged_headers, std::string_view(error.what()));
+                capture_invalid_payload_snapshot(route, *effective_request_body, bridged_headers, std::string_view(error.what()));
             auto detail = std::string("error=") + error.what();
             if (capture_path.has_value()) {
                 detail += " capture_path=" + *capture_path;
@@ -816,7 +819,7 @@ ProxyWsResult proxy_responses_websocket(
                 }
                 try {
                     plan = openai::build_responses_websocket_request_plan(
-                        bridged_request_body,
+                        *effective_request_body,
                         bridged_headers,
                         access_token,
                         resolved_affinity.account_id,
@@ -838,7 +841,7 @@ ProxyWsResult proxy_responses_websocket(
     }
     if (response_create_request && backend_codex_route && continuation_request && continuation_contains_function_call_output &&
         internal::resolved_upstream_error_code(upstream) == "previous_response_not_found") {
-        if (const auto rewritten = session::replace_previous_response_id_from_bridge(bridged_request_body, bridged_headers);
+        if (const auto rewritten = session::replace_previous_response_id_from_bridge(*effective_request_body, bridged_headers);
             rewritten.has_value()) {
             core::logging::log_event(
                 core::logging::LogLevel::Info,
@@ -870,7 +873,7 @@ ProxyWsResult proxy_responses_websocket(
     if (response_create_request && backend_codex_route && continuation_request &&
         !continuation_contains_function_call_output &&
         internal::resolved_upstream_error_code(upstream) == "previous_response_not_found") {
-        if (const auto stripped = session::strip_previous_response_id(bridged_request_body); stripped.has_value()) {
+        if (const auto stripped = session::strip_previous_response_id(*effective_request_body); stripped.has_value()) {
             core::logging::log_event(
                 core::logging::LogLevel::Info,
                 "runtime",
@@ -938,7 +941,7 @@ ProxyWsResult proxy_responses_websocket(
     const auto error_code = internal::resolved_upstream_error_code(upstream);
 
     if (!accepted) {
-        const auto status = upstream.status > 0 ? upstream.status : 502;
+        const auto status = upstream.status >= 400 ? upstream.status : 502;
         core::logging::log_event(
             core::logging::LogLevel::Warning,
             "runtime",

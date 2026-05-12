@@ -887,6 +887,41 @@ TEST_CASE("default upstream transport executes compact path over HTTP", "[proxy]
     REQUIRE(server.captured_request().find("POST /codex/responses/compact HTTP/1.1") != std::string::npos);
 }
 
+TEST_CASE("default upstream transport strips stale content encoding before HTTP upstream", "[proxy][transport][default]") {
+    tightrope::proxy::reset_upstream_transport();
+
+    SingleRequestHttpServer server{
+        "200 OK",
+        "application/json",
+        R"({"id":"resp_default_plain","object":"response","status":"completed","output":[]})",
+    };
+
+    EnvVarGuard base_url_guard("TIGHTROPE_UPSTREAM_BASE_URL");
+    EnvVarGuard compression_guard("TIGHTROPE_UPSTREAM_ENABLE_REQUEST_COMPRESSION");
+    const auto base_url = std::string("http://127.0.0.1:") + std::to_string(server.port());
+    REQUIRE(setenv("TIGHTROPE_UPSTREAM_BASE_URL", base_url.c_str(), 1) == 0);
+    REQUIRE(setenv("TIGHTROPE_UPSTREAM_ENABLE_REQUEST_COMPRESSION", "false", 1) == 0);
+
+    tightrope::proxy::openai::UpstreamRequestPlan plan{
+        .method = "POST",
+        .path = "/codex/responses",
+        .transport = "http-json",
+        .body = R"({"model":"gpt-5.4","input":"plain-body"})",
+        .headers = {
+            {"Accept", "application/json"},
+            {"Content-Type", "application/json"},
+            {"Content-Encoding", "zstd"},
+        },
+    };
+
+    const auto response = tightrope::proxy::execute_upstream_plan(plan);
+
+    REQUIRE(response.status == 200);
+    const auto captured = server.captured_request();
+    REQUIRE(request_header_value(captured, "Content-Encoding").has_value() == false);
+    REQUIRE(request_body(captured).find("\"plain-body\"") != std::string::npos);
+}
+
 TEST_CASE("default upstream transport optionally applies zstd request compression", "[proxy][transport][default]") {
     tightrope::proxy::reset_upstream_transport();
 

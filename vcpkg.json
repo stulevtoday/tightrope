@@ -41,6 +41,10 @@
     "libuv",
     "openssl",
     "curl",
+    {
+      "name": "zstd",
+      "platform": "windows"
+    },
     "catch2",
     {
       "name": "libgnutls",

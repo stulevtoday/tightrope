@@ -73,8 +73,11 @@ std::optional<std::string> continuity_key_from_headers(const openai::HeaderMap& 
     const auto client_session_id = find_header_case_insensitive(headers, "session_id");
     const auto turn_state = find_header_case_insensitive(headers, "x-codex-turn-state");
 
-    // Keep continuity keys stable across requests:
-    // prefer explicit session identifiers and only fall back to turn-state when no session id exists.
+    // Codex turn-state is the narrowest continuity token. Session identifiers remain a legacy
+    // bridge fallback for clients that do not replay x-codex-turn-state.
+    if (!turn_state.empty()) {
+        return turn_state;
+    }
     if (!codex_session_id.empty() && !client_session_id.empty()) {
         if (codex_session_id == client_session_id) {
             return codex_session_id;
@@ -86,9 +89,6 @@ std::optional<std::string> continuity_key_from_headers(const openai::HeaderMap& 
     }
     if (!client_session_id.empty()) {
         return client_session_id;
-    }
-    if (!turn_state.empty()) {
-        return turn_state;
     }
     return std::nullopt;
 }
@@ -482,13 +482,21 @@ resolve_preferred_account_id_from_previous_response(const std::string& raw_reque
         return std::nullopt;
     }
 
+    const auto key = continuity_key_from_headers(headers);
+    if (!key.has_value() || key->empty()) {
+        return std::nullopt;
+    }
     const auto api_key_scope = api_key_scope_from_headers(headers);
 
     std::lock_guard<std::mutex> lock(http_bridge_mutex());
     auto& persistence = bridge_persistence_state();
     const auto now = now_ms();
     if (sqlite3* db = ensure_persistence_db(persistence); db != nullptr) {
-        auto account_id = db::find_proxy_response_continuity_account(db, *previous_response_id, api_key_scope, now);
+        std::optional<std::string> account_id;
+        if (const auto record = db::find_proxy_response_continuity(db, *key, api_key_scope, now);
+            record.has_value() && record->response_id == *previous_response_id && !record->account_id.empty()) {
+            account_id = record->account_id;
+        }
         maybe_purge_expired_persistence_rows(persistence, db, now);
         return account_id;
     }

@@ -384,6 +384,53 @@ TEST_CASE("responses JSON API key scoping does not rewrite previous_response_id"
     std::filesystem::remove(bridge_db_path);
 }
 
+TEST_CASE(
+    "responses JSON continuity prefers turn-state over session_id when both headers are present",
+    "[proxy][transport][bridge]"
+) {
+    const auto bridge_db_path = make_temp_proxy_db_path("bridge-turn-state-precedence");
+    EnvVarGuard db_path_guard("TIGHTROPE_DB_PATH");
+    REQUIRE(setenv("TIGHTROPE_DB_PATH", bridge_db_path.string().c_str(), 1) == 0);
+
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [](const tightrope::proxy::openai::UpstreamRequestPlan&) {
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .body = R"({"id":"resp_turn_state_precedence","object":"response","status":"completed","output":[]})",
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const auto fixture = tightrope::tests::contracts::load_http_fixture("responses_post");
+    const tightrope::proxy::openai::HeaderMap inbound = {
+        {"session_id", "transport-http-bridge-session"},
+        {"x-codex-turn-state", "transport-http-bridge-turn"},
+        {"chatgpt-account-id", "acc-turn-state"},
+    };
+
+    const auto response =
+        tightrope::server::controllers::post_proxy_responses_json("/v1/responses", fixture.request.body, inbound);
+    REQUIRE(response.status == 200);
+
+    const std::string followup_payload =
+        R"({"model":"gpt-5.4","input":"turn-state precedence","previous_response_id":"resp_turn_state_precedence"})";
+    const auto session_only = tightrope::proxy::session::resolve_preferred_account_id_from_previous_response(
+        followup_payload,
+        {{"session_id", "transport-http-bridge-session"}}
+    );
+    REQUIRE_FALSE(session_only.has_value());
+
+    const auto same_turn = tightrope::proxy::session::resolve_preferred_account_id_from_previous_response(
+        followup_payload,
+        {{"session_id", "transport-http-bridge-session"}, {"x-codex-turn-state", "transport-http-bridge-turn"}}
+    );
+    REQUIRE(same_turn.has_value());
+    REQUIRE(*same_turn == "acc-turn-state");
+
+    std::filesystem::remove(bridge_db_path);
+}
+
 TEST_CASE("responses JSON path reuses sticky account by prompt cache key", "[proxy][transport][sticky]") {
     const auto sticky_db_file =
         std::filesystem::temp_directory_path() / std::filesystem::path("tightrope-proxy-sticky-transport.sqlite3");
@@ -571,7 +618,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "responses JSON path replays preferred account from previous_response_id snapshot",
+    "responses JSON path replays account from previous_response_id only within continuity session",
     "[proxy][transport][bridge][account]"
 ) {
     const auto db_path = make_temp_proxy_db_path("bridge-account-replay");
@@ -641,6 +688,10 @@ TEST_CASE(
     const tightrope::proxy::openai::HeaderMap second_headers = {
         {"session_id", "transport-http-bridge-account-replay"},
     };
+    const auto scoped_preference =
+        tightrope::proxy::session::resolve_preferred_account_id_from_previous_response(second_payload, second_headers);
+    REQUIRE(scoped_preference.has_value());
+    REQUIRE(*scoped_preference == "acc-replay");
     const auto second =
         tightrope::server::controllers::post_proxy_responses_json("/v1/responses", second_payload, second_headers);
 
@@ -680,24 +731,16 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "backend responses JSON path retries without previous_response_id after previous_response_not_found",
+    "backend responses JSON path strips unknown previous_response_id before upstream",
     "[proxy][transport][guard][backend]"
 ) {
     std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
     auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
         [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
             observed_plans.push_back(plan);
-            if (observed_plans.size() == 1) {
-                return tightrope::proxy::UpstreamExecutionResult{
-                    .status = 400,
-                    .body =
-                        R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
-                    .error_code = "previous_response_not_found",
-                };
-            }
             return tightrope::proxy::UpstreamExecutionResult{
                 .status = 200,
-                .body = R"({"id":"resp_backend_json_guard_retried","object":"response","status":"completed","output":[]})",
+                .body = R"({"id":"resp_backend_json_guard_stripped","object":"response","status":"completed","output":[]})",
             };
         }
     );
@@ -709,10 +752,9 @@ TEST_CASE(
         tightrope::server::controllers::post_proxy_responses_json("/backend-api/codex/responses", payload);
 
     REQUIRE(response.status == 200);
-    REQUIRE(observed_plans.size() == 2);
-    REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_backend_json_guard_prev\"") != std::string::npos);
-    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
-    REQUIRE(response.body.find("\"resp_backend_json_guard_retried\"") != std::string::npos);
+    REQUIRE(observed_plans.size() == 1);
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\"") == std::string::npos);
+    REQUIRE(response.body.find("\"resp_backend_json_guard_stripped\"") != std::string::npos);
 }
 
 TEST_CASE(
@@ -749,7 +791,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "backend responses JSON path retries with bridged previous_response_id for function_call_output payloads",
+    "backend responses JSON path preflights bridged previous_response_id for function_call_output payloads",
     "[proxy][transport][guard][backend][bridge]"
 ) {
     const auto bridge_db_path = make_temp_proxy_db_path("bridge-json-tool-previous-rewrite");
@@ -809,11 +851,9 @@ TEST_CASE(
         tightrope::server::controllers::post_proxy_responses_json("/backend-api/codex/responses", payload, inbound);
 
     REQUIRE(response.status == 200);
-    REQUIRE(observed_plans.size() == 2);
-    REQUIRE(
-        observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_json_tool_rewrite\"") != std::string::npos
-    );
-    REQUIRE(observed_plans[1].body.find("\"previous_response_id\":\"resp_current_json_tool\"") != std::string::npos);
+    REQUIRE(observed_plans.size() == 1);
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_current_json_tool\"") != std::string::npos);
+    REQUIRE(observed_plans[0].body.find("\"resp_stale_json_tool_rewrite\"") == std::string::npos);
     REQUIRE(response.body.find("\"resp_guard_json_tool_retried\"") != std::string::npos);
 
     std::filesystem::remove(bridge_db_path);
@@ -895,17 +935,12 @@ TEST_CASE(
         tightrope::server::controllers::post_proxy_responses_json("/backend-api/codex/responses", payload, inbound);
 
     REQUIRE(response.status == 200);
-    REQUIRE(observed_plans.size() == 2);
+    REQUIRE(observed_plans.size() == 1);
     REQUIRE(
-        observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_json_tool_account\"") != std::string::npos
-    );
-    REQUIRE(
-        observed_plans[1].body.find("\"previous_response_id\":\"resp_current_json_tool_account\"") != std::string::npos
+        observed_plans[0].body.find("\"previous_response_id\":\"resp_current_json_tool_account\"") != std::string::npos
     );
     REQUIRE(observed_plans[0].headers.find("chatgpt-account-id") != observed_plans[0].headers.end());
-    REQUIRE(observed_plans[1].headers.find("chatgpt-account-id") != observed_plans[1].headers.end());
     REQUIRE(observed_plans[0].headers.at("chatgpt-account-id") == "acc-json-tool-cont");
-    REQUIRE(observed_plans[1].headers.at("chatgpt-account-id") == "acc-json-tool-cont");
     REQUIRE(response.body.find("\"resp_guard_json_tool_account_retried\"") != std::string::npos);
 
     std::filesystem::remove(bridge_db_path);
@@ -1029,26 +1064,18 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "backend responses SSE path retries without previous_response_id after previous_response_not_found",
+    "backend responses SSE path strips unknown previous_response_id before upstream",
     "[proxy][transport][guard][sse][backend]"
 ) {
     std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
     auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
         [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
             observed_plans.push_back(plan);
-            if (observed_plans.size() == 1) {
-                return tightrope::proxy::UpstreamExecutionResult{
-                    .status = 400,
-                    .body =
-                        R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
-                    .error_code = "previous_response_not_found",
-                };
-            }
             return tightrope::proxy::UpstreamExecutionResult{
                 .status = 200,
                 .events = {
-                    R"({"type":"response.created","response":{"id":"resp_backend_sse_guard_retried","status":"in_progress"}})",
-                    R"({"type":"response.completed","response":{"id":"resp_backend_sse_guard_retried","object":"response","status":"completed","output":[]}})",
+                    R"({"type":"response.created","response":{"id":"resp_backend_sse_guard_stripped","status":"in_progress"}})",
+                    R"({"type":"response.completed","response":{"id":"resp_backend_sse_guard_stripped","object":"response","status":"completed","output":[]}})",
                 },
             };
         }
@@ -1061,11 +1088,10 @@ TEST_CASE(
         tightrope::server::controllers::post_proxy_responses_sse("/backend-api/codex/responses", payload);
 
     REQUIRE(response.status == 200);
-    REQUIRE(observed_plans.size() == 2);
-    REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_backend_sse_guard_prev\"") != std::string::npos);
-    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
+    REQUIRE(observed_plans.size() == 1);
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\"") == std::string::npos);
     REQUIRE(response.events.size() == 2);
-    REQUIRE(response.events[1].find("\"resp_backend_sse_guard_retried\"") != std::string::npos);
+    REQUIRE(response.events[1].find("\"resp_backend_sse_guard_stripped\"") != std::string::npos);
 }
 
 TEST_CASE(
@@ -1105,7 +1131,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "backend responses SSE path retries with bridged previous_response_id for function_call_output payloads",
+    "backend responses SSE path preflights bridged previous_response_id for function_call_output payloads",
     "[proxy][transport][guard][sse][backend][bridge]"
 ) {
     const auto bridge_db_path = make_temp_proxy_db_path("bridge-sse-tool-previous-rewrite");
@@ -1168,11 +1194,9 @@ TEST_CASE(
         tightrope::server::controllers::post_proxy_responses_sse("/backend-api/codex/responses", payload, inbound);
 
     REQUIRE(response.status == 200);
-    REQUIRE(observed_plans.size() == 2);
-    REQUIRE(
-        observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_sse_tool_rewrite\"") != std::string::npos
-    );
-    REQUIRE(observed_plans[1].body.find("\"previous_response_id\":\"resp_current_sse_tool\"") != std::string::npos);
+    REQUIRE(observed_plans.size() == 1);
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_current_sse_tool\"") != std::string::npos);
+    REQUIRE(observed_plans[0].body.find("\"resp_stale_sse_tool_rewrite\"") == std::string::npos);
     REQUIRE(response.events.size() == 2);
     REQUIRE(response.events[1].find("\"resp_guard_sse_tool_retried\"") != std::string::npos);
 
@@ -1450,7 +1474,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "responses websocket path prefers previous_response account over sticky affinity",
+    "responses websocket path does not use previous_response account outside continuity session",
     "[proxy][transport][ws][bridge][account]"
 ) {
     const auto db_path = make_temp_proxy_db_path("bridge-ws-account-precedence");
@@ -1528,21 +1552,20 @@ TEST_CASE(
 
     const std::string payload = R"({"model":"gpt-5.4","input":"ws precedence","prompt_cache_key":"ws-sticky-key","previous_response_id":"resp_ws_previous_conflict"})";
     const auto preferred_account_id = tightrope::proxy::session::resolve_preferred_account_id_from_previous_response(payload, {});
-    REQUIRE(preferred_account_id.has_value());
-    REQUIRE(*preferred_account_id == "acc-ws-replay");
+    REQUIRE_FALSE(preferred_account_id.has_value());
     const auto response = tightrope::server::controllers::proxy_responses_websocket("/v1/responses", payload);
 
     REQUIRE(response.status == 101);
     REQUIRE(response.accepted);
     REQUIRE(observed_plans.size() == 1);
     REQUIRE(observed_plans[0].headers.find("chatgpt-account-id") != observed_plans[0].headers.end());
-    REQUIRE(observed_plans[0].headers.at("chatgpt-account-id") == "acc-ws-replay");
+    REQUIRE(observed_plans[0].headers.at("chatgpt-account-id") == "acc-ws-fallback");
 
     std::filesystem::remove(db_path);
 }
 
 TEST_CASE(
-    "backend websocket path prefers previous_response account over sticky affinity when api scope is absent",
+    "backend websocket path strips previous_response outside continuity session before sticky routing",
     "[proxy][transport][ws][bridge][account]"
 ) {
     const auto db_path = make_temp_proxy_db_path("bridge-ws-account-precedence-backend");
@@ -1620,8 +1643,7 @@ TEST_CASE(
 
     const std::string payload = R"({"model":"gpt-5.4","input":"ws backend precedence","prompt_cache_key":"ws-backend-sticky-key","previous_response_id":"resp_ws_backend_previous_conflict"})";
     const auto preferred_account_id = tightrope::proxy::session::resolve_preferred_account_id_from_previous_response(payload, {});
-    REQUIRE(preferred_account_id.has_value());
-    REQUIRE(*preferred_account_id == "acc-ws-backend-replay");
+    REQUIRE_FALSE(preferred_account_id.has_value());
     const auto response =
         tightrope::server::controllers::proxy_responses_websocket("/backend-api/codex/responses", payload);
 
@@ -1629,7 +1651,8 @@ TEST_CASE(
     REQUIRE(response.accepted);
     REQUIRE(observed_plans.size() == 1);
     REQUIRE(observed_plans[0].headers.find("chatgpt-account-id") != observed_plans[0].headers.end());
-    REQUIRE(observed_plans[0].headers.at("chatgpt-account-id") == "acc-ws-backend-replay");
+    REQUIRE(observed_plans[0].headers.at("chatgpt-account-id") == "acc-ws-backend-fallback");
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\"") == std::string::npos);
 
     std::filesystem::remove(db_path);
 }
@@ -1843,7 +1866,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "backend websocket path retries with bridged previous_response_id for function_call_output payloads",
+    "backend websocket path preflights bridged previous_response_id for function_call_output payloads",
     "[proxy][transport][ws][guard][backend][bridge]"
 ) {
     const auto bridge_db_path = make_temp_proxy_db_path("bridge-ws-tool-previous-backend-rewrite");
@@ -1912,14 +1935,11 @@ TEST_CASE(
 
     REQUIRE(response.status == 101);
     REQUIRE(response.accepted);
-    REQUIRE(observed_plans.size() == 2);
+    REQUIRE(observed_plans.size() == 1);
     REQUIRE(
-        observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_ws_tool_backend_rewrite\"") !=
-        std::string::npos
+        observed_plans[0].body.find("\"previous_response_id\":\"resp_current_ws_tool_backend\"") != std::string::npos
     );
-    REQUIRE(
-        observed_plans[1].body.find("\"previous_response_id\":\"resp_current_ws_tool_backend\"") != std::string::npos
-    );
+    REQUIRE(observed_plans[0].body.find("\"resp_stale_ws_tool_backend_rewrite\"") == std::string::npos);
     REQUIRE(response.frames.size() == 2);
     REQUIRE(response.frames[1].find("\"resp_guard_ws_tool_backend_retried\"") != std::string::npos);
 
@@ -1989,29 +2009,18 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "backend websocket path retries without previous_response_id after previous_response_not_found",
+    "backend websocket path strips unknown previous_response_id before upstream",
     "[proxy][transport][ws][guard]"
 ) {
     std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
     auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
         [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
             observed_plans.push_back(plan);
-            if (observed_plans.size() == 1) {
-                return tightrope::proxy::UpstreamExecutionResult{
-                    .status = 101,
-                    .events = {
-                        R"({"type":"response.failed","response":{"id":"resp_backend_guard_failed","status":"failed"},"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
-                    },
-                    .accepted = true,
-                    .close_code = 1000,
-                    .error_code = "previous_response_not_found",
-                };
-            }
             return tightrope::proxy::UpstreamExecutionResult{
                 .status = 101,
                 .events = {
-                    R"({"type":"response.created","response":{"id":"resp_backend_guard_retried","status":"in_progress"}})",
-                    R"({"type":"response.completed","response":{"id":"resp_backend_guard_retried","object":"response","status":"completed","output":[]}})",
+                    R"({"type":"response.created","response":{"id":"resp_backend_guard_stripped","status":"in_progress"}})",
+                    R"({"type":"response.completed","response":{"id":"resp_backend_guard_stripped","object":"response","status":"completed","output":[]}})",
                 },
                 .accepted = true,
                 .close_code = 1000,
@@ -2026,11 +2035,10 @@ TEST_CASE(
 
     REQUIRE(response.status == 101);
     REQUIRE(response.accepted);
-    REQUIRE(observed_plans.size() == 2);
-    REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_backend_guard_prev\"") != std::string::npos);
-    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
+    REQUIRE(observed_plans.size() == 1);
+    REQUIRE(observed_plans[0].body.find("\"previous_response_id\"") == std::string::npos);
     REQUIRE(response.frames.size() == 2);
-    REQUIRE(response.frames[1].find("\"resp_backend_guard_retried\"") != std::string::npos);
+    REQUIRE(response.frames[1].find("\"resp_backend_guard_stripped\"") != std::string::npos);
 }
 
 TEST_CASE("backend websocket route marks upstream websocket session preservation", "[proxy][transport][ws][guard]") {
@@ -2213,7 +2221,7 @@ TEST_CASE("websocket proxy path accepts flat response.create payload", "[proxy][
 }
 
 TEST_CASE(
-    "websocket proxy path preserves top-level response.create fields when response object is provided",
+    "backend websocket path strips unknown top-level previous_response_id when response object is provided",
     "[proxy][transport][ws]"
 ) {
     auto fake = std::make_shared<FakeUpstreamTransport>();
@@ -2237,7 +2245,8 @@ TEST_CASE(
 
     REQUIRE(fake->called);
     REQUIRE(fake->last_plan.body.find("\"type\":\"response.create\"") != std::string::npos);
-    REQUIRE(fake->last_plan.body.find("\"previous_response_id\":\"resp_outer_previous\"") != std::string::npos);
+    REQUIRE(fake->last_plan.body.find("merge test") != std::string::npos);
+    REQUIRE(fake->last_plan.body.find("\"previous_response_id\"") == std::string::npos);
     REQUIRE(response.status == 101);
     REQUIRE(response.accepted);
     REQUIRE(response.close_code == 1000);

@@ -176,7 +176,7 @@ HeaderMap build_upstream_headers(
     HeaderMap headers;
     for (const auto& [key, value] : inbound) {
         const auto lower = core::text::to_lower_ascii(key);
-        if (blocked.find(lower) != blocked.end()) {
+        if (blocked.find(lower) != blocked.end() || should_drop_inbound_header(key)) {
             continue;
         }
         headers.emplace(key, value);
@@ -236,7 +236,7 @@ HeaderMap build_upstream_websocket_headers(
     HeaderMap headers;
     for (const auto& [key, value] : inbound) {
         const auto lower = core::text::to_lower_ascii(key);
-        if (blocked.find(lower) != blocked.end()) {
+        if (blocked.find(lower) != blocked.end() || should_drop_inbound_header(key)) {
             continue;
         }
         headers.emplace(key, value);

@@ -1019,7 +1019,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "responses JSON continuation honors pinned account over persisted continuity preference",
+    "responses JSON continuation honors pinned account when no session continuity key is replayed",
     "[proxy][auth][credentials][routing][pin][continuity]"
 ) {
     const auto seeded = make_oauth_db_with_two_accounts();

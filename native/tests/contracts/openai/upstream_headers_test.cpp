@@ -104,6 +104,7 @@ TEST_CASE("websocket headers remove hop-by-hop and connection-token headers", "[
         {"Connection", "keep-alive, Upgrade, X-Custom-Hop"},
         {"Accept", "text/event-stream"},
         {"Content-Type", "application/json"},
+        {"Content-Encoding", "zstd"},
         {"Upgrade", "websocket"},
         {"Cookie", "session=secret"},
         {"X-Custom-Hop", "drop"},
@@ -116,6 +117,7 @@ TEST_CASE("websocket headers remove hop-by-hop and connection-token headers", "[
     REQUIRE(headers.find("Connection") == headers.end());
     REQUIRE(headers.find("Accept") == headers.end());
     REQUIRE(headers.find("Content-Type") == headers.end());
+    REQUIRE(headers.find("Content-Encoding") == headers.end());
     REQUIRE(headers.find("Upgrade") == headers.end());
     REQUIRE(headers.find("Cookie") == headers.end());
     REQUIRE(headers.find("X-Custom-Hop") == headers.end());

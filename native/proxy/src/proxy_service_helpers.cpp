@@ -12,6 +12,7 @@
 #include <glaze/glaze.hpp>
 
 #include "logging/logger.h"
+#include "session/http_bridge.h"
 #include "text/ascii.h"
 #include "usage_fetcher.h"
 
@@ -139,6 +140,76 @@ bool is_supported_transcribe_route(const std::string_view route) {
 
 bool is_proxy_sse_contract_event(const std::string& event) {
     return event.find("\"contract\":\"proxy-streaming-v1\"") != std::string::npos;
+}
+
+bool optional_string_has_value(const std::optional<std::string>& value) {
+    return value.has_value() && !value->empty();
+}
+
+ContinuationRequestGuard guard_backend_codex_previous_response(
+    const std::string_view route,
+    const std::string& raw_request_body,
+    const openai::HeaderMap& bridged_headers,
+    const session::StickyAffinityResolution& affinity
+) {
+    ContinuationRequestGuard guard;
+    guard.request_body = raw_request_body;
+    guard.continuation_request = session::request_has_previous_response_id(guard.request_body);
+    guard.contains_function_call_output =
+        guard.continuation_request && session::request_contains_function_call_output(guard.request_body);
+    guard.preferred_account_id =
+        session::resolve_preferred_account_id_from_previous_response(guard.request_body, bridged_headers);
+    guard.continuity_account_id =
+        guard.continuation_request ? session::resolve_continuity_account_id(bridged_headers) : std::nullopt;
+
+    if (route != "/backend-api/codex/responses" || !guard.continuation_request) {
+        return guard;
+    }
+
+    if (const auto rewritten = session::replace_previous_response_id_from_bridge(guard.request_body, bridged_headers);
+        rewritten.has_value()) {
+        guard.request_body = *rewritten;
+        guard.preflight_rewritten = true;
+        guard.continuation_request = session::request_has_previous_response_id(guard.request_body);
+        guard.contains_function_call_output =
+            guard.continuation_request && session::request_contains_function_call_output(guard.request_body);
+        guard.preferred_account_id =
+            session::resolve_preferred_account_id_from_previous_response(guard.request_body, bridged_headers);
+        guard.continuity_account_id =
+            guard.continuation_request ? session::resolve_continuity_account_id(bridged_headers) : std::nullopt;
+        core::logging::log_event(
+            core::logging::LogLevel::Info,
+            "runtime",
+            "proxy",
+            "responses_previous_response_bridge_preflight_rewrite",
+            "route=" + std::string(route)
+        );
+    }
+
+    const bool has_account_context = optional_string_has_value(guard.preferred_account_id) ||
+                                     optional_string_has_value(guard.continuity_account_id) ||
+                                     affinity.from_header;
+    if (has_account_context || guard.contains_function_call_output) {
+        return guard;
+    }
+
+    if (const auto stripped = session::strip_previous_response_id(guard.request_body); stripped.has_value()) {
+        guard.request_body = *stripped;
+        guard.preflight_stripped = true;
+        guard.continuation_request = false;
+        guard.contains_function_call_output = false;
+        guard.preferred_account_id = std::nullopt;
+        guard.continuity_account_id = std::nullopt;
+        core::logging::log_event(
+            core::logging::LogLevel::Info,
+            "runtime",
+            "proxy",
+            "responses_previous_response_guard_preflight_strip",
+            "route=" + std::string(route)
+        );
+    }
+
+    return guard;
 }
 
 std::string build_success_json_body() {

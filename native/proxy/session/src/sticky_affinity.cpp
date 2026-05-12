@@ -1472,7 +1472,7 @@ std::optional<UpstreamAccountCredentials> resolve_upstream_account_credentials(
         return std::nullopt;
     }
     const auto settings = db::get_dashboard_settings(db).value_or(db::DashboardSettingsRecord{});
-    const bool enforce_strict_preferred = strict_preferred_only && settings.strict_lock_pool_continuations;
+    const bool enforce_strict_preferred = strict_preferred_only;
     const auto locked_account_ids = parse_locked_routing_account_ids(settings.locked_routing_account_ids);
     const bool lock_pool_active = locked_account_ids.size() >= 2;
     const std::unordered_set<std::string> lock_pool_set(locked_account_ids.begin(), locked_account_ids.end());
@@ -1514,6 +1514,56 @@ std::optional<UpstreamAccountCredentials> resolve_upstream_account_credentials(
         return std::optional<UpstreamAccountCredentials>{};
     };
 
+    const auto preferred = std::string(core::text::trim_ascii(preferred_account_id));
+    auto query_preferred_credentials = [&]() -> std::optional<UpstreamAccountCredentials> {
+        if (preferred.empty()) {
+            return std::nullopt;
+        }
+        std::optional<UpstreamAccountCredentials> preferred_credentials = query_exact_account_credentials(db, preferred);
+        if (!preferred_credentials.has_value()) {
+            if (const auto preferred_internal_id = parse_positive_int64(preferred); preferred_internal_id.has_value()) {
+                preferred_credentials = query_internal_account_credentials(db, *preferred_internal_id);
+            }
+        }
+        return preferred_credentials;
+    };
+    auto preferred_is_allowed = [&](const std::optional<UpstreamAccountCredentials>& preferred_credentials) {
+        bool preferred_allowed = !lock_pool_active || lock_pool_set.find(preferred) != lock_pool_set.end();
+        if (!preferred_allowed && lock_pool_active && preferred_credentials.has_value()) {
+            if (lock_pool_set.find(preferred_credentials->account_id) != lock_pool_set.end()) {
+                preferred_allowed = true;
+            } else if (preferred_credentials->internal_account_id > 0) {
+                const auto preferred_internal_id = std::to_string(preferred_credentials->internal_account_id);
+                preferred_allowed = lock_pool_set.find(preferred_internal_id) != lock_pool_set.end();
+            }
+        }
+        return preferred_allowed;
+    };
+    auto select_preferred_credentials = [&]() -> std::optional<UpstreamAccountCredentials> {
+        if (preferred.empty()) {
+            return std::nullopt;
+        }
+        auto preferred_credentials = query_preferred_credentials();
+        if (!preferred_is_allowed(preferred_credentials)) {
+            return std::nullopt;
+        }
+        if (auto guarded = guard_lock_pool_selection(std::move(preferred_credentials), "preferred");
+            guarded.has_value()) {
+            emit_runtime_signal(
+                "info",
+                "route_account_selected",
+                "routing resolved via preferred account",
+                guarded->account_id
+            );
+            return guarded;
+        }
+        return std::nullopt;
+    };
+
+    if (enforce_strict_preferred) {
+        return select_preferred_credentials();
+    }
+
     if (!lock_pool_active) {
         if (auto credentials = query_pinned_account_credentials(db); credentials.has_value()) {
             emit_runtime_signal(
@@ -1526,43 +1576,10 @@ std::optional<UpstreamAccountCredentials> resolve_upstream_account_credentials(
         }
     }
 
-    if (!preferred_account_id.empty()) {
-        const auto preferred = std::string(core::text::trim_ascii(preferred_account_id));
-        std::optional<UpstreamAccountCredentials> preferred_credentials = query_exact_account_credentials(db, preferred);
-        if (!preferred_credentials.has_value()) {
-            if (const auto preferred_internal_id = parse_positive_int64(preferred); preferred_internal_id.has_value()) {
-                preferred_credentials = query_internal_account_credentials(db, *preferred_internal_id);
-            }
+    if (!preferred.empty()) {
+        if (auto credentials = select_preferred_credentials(); credentials.has_value()) {
+            return credentials;
         }
-
-        bool preferred_allowed = !lock_pool_active || lock_pool_set.find(preferred) != lock_pool_set.end();
-        if (!preferred_allowed && lock_pool_active && preferred_credentials.has_value()) {
-            if (lock_pool_set.find(preferred_credentials->account_id) != lock_pool_set.end()) {
-                preferred_allowed = true;
-            } else if (preferred_credentials->internal_account_id > 0) {
-                const auto preferred_internal_id = std::to_string(preferred_credentials->internal_account_id);
-                preferred_allowed = lock_pool_set.find(preferred_internal_id) != lock_pool_set.end();
-            }
-        }
-        if (preferred_allowed) {
-            if (preferred_credentials.has_value()) {
-                if (auto guarded = guard_lock_pool_selection(std::move(preferred_credentials), "preferred");
-                    guarded.has_value()) {
-                    emit_runtime_signal(
-                        "info",
-                        "route_account_selected",
-                        "routing resolved via preferred account",
-                        guarded->account_id
-                    );
-                    return guarded;
-                }
-            }
-        }
-        if (enforce_strict_preferred) {
-            return std::nullopt;
-        }
-    } else if (enforce_strict_preferred) {
-        return std::nullopt;
     }
 
     auto select_strategy_credentials = [&]() -> std::optional<UpstreamAccountCredentials> {

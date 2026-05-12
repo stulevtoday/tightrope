@@ -348,7 +348,9 @@ UpstreamExecutionResult execute_upstream_with_retry_budget(
         upstream = execute_upstream_plan(plan);
         upstream.error_code = resolved_upstream_error_code(upstream);
         if (const auto exhausted = exhausted_account_status_from_upstream(upstream); exhausted.has_value()) {
-            upstream.error_code = *exhausted == "quota_blocked" ? "insufficient_quota" : "rate_limit_exceeded";
+            if (upstream.error_code.empty() || upstream.error_code == "upstream_error") {
+                upstream.error_code = *exhausted == "quota_blocked" ? "insufficient_quota" : "rate_limit_exceeded";
+            }
         }
         if (attempt >= retry_budget || !should_retry(upstream)) {
             break;

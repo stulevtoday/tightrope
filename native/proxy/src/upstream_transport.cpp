@@ -1589,10 +1589,9 @@ UpstreamExecutionResult execute_over_http(
     } headers_guard{headers};
     bool has_accept = false;
     bool has_content_type = false;
-    bool has_content_encoding = false;
     for (const auto& [key, value] : plan.headers) {
         const auto lowered = lower_ascii(key);
-        if (lowered == "content-length") {
+        if (lowered == "content-length" || lowered == "content-encoding") {
             continue;
         }
         if (websocket_fallback && lowered == "accept") {
@@ -1612,9 +1611,6 @@ UpstreamExecutionResult execute_over_http(
         if (lowered == "content-type") {
             has_content_type = true;
         }
-        if (lowered == "content-encoding") {
-            has_content_encoding = true;
-        }
     }
     if ((plan.transport == "http-sse" || websocket_fallback) && !has_accept) {
         headers = append_header(headers, "Accept", "text/event-stream");
@@ -1622,7 +1618,7 @@ UpstreamExecutionResult execute_over_http(
     if (websocket_fallback && !has_content_type) {
         headers = append_header(headers, "Content-Type", "application/json");
     }
-    if (request_body_compressed && !has_content_encoding) {
+    if (request_body_compressed) {
         headers = append_header(headers, "Content-Encoding", "zstd");
     }
 

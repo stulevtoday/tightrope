@@ -128,8 +128,7 @@ TEST_CASE("response continuity repository persists scoped response snapshots", "
 
     const auto account_without_scope =
         tightrope::db::find_proxy_response_continuity_account(db, "resp-a-2", "", /*now_ms=*/1300);
-    REQUIRE(account_without_scope.has_value());
-    REQUIRE(*account_without_scope == "acc-a");
+    REQUIRE_FALSE(account_without_scope.has_value());
 
     REQUIRE(tightrope::db::purge_expired_proxy_response_continuity(db, /*now_ms=*/1800) == 3);
     REQUIRE(tightrope::db::find_proxy_response_continuity(db, "turn-1", "api-key-a", /*now_ms=*/1800) == std::nullopt);
