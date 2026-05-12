@@ -185,14 +185,24 @@ exit /b 0
 :setup_env
 if defined TIGHTROPE_VS_READY exit /b 0
 
+where cl.exe >nul 2>nul
+if not errorlevel 1 (
+  if defined VCToolsInstallDir (
+    echo [build.bat] Using existing Visual Studio developer environment.
+    if defined VSINSTALLDIR set "VCPKG_VISUAL_STUDIO_PATH=%VSINSTALLDIR%"
+    set "TIGHTROPE_VS_READY=1"
+    exit /b 0
+  )
+)
+
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if exist "%VSWHERE%" goto setup_try_vswhere
 goto setup_try_scan
 
 :setup_try_vswhere
-for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -version [17.0,18.0^) -property installationPath`) do set "VS_INSTALL=%%i"
+for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -version [16.0,19.0^) -property installationPath`) do set "VS_INSTALL=%%i"
 if not defined VS_INSTALL (
-  for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -prerelease -products * -version [18.0,19.0^) -property installationPath`) do set "VS_INSTALL=%%i"
+  for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -prerelease -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -version [16.0,19.0^) -property installationPath`) do set "VS_INSTALL=%%i"
 )
 if not defined VS_INSTALL goto setup_try_scan
 set "VSCONFIG=%VS_INSTALL%\VC\Auxiliary\Build\vcvarsall.bat"
@@ -202,25 +212,8 @@ goto setup_finish_env
 :setup_try_scan
 set "VS_INSTALL="
 set "VSCONFIG="
-set "VSBASE=%ProgramFiles%\Microsoft Visual Studio"
-if not exist "%VSBASE%" goto setup_error_not_found
-
-if exist "%VSBASE%\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat" (
-  set "VSCONFIG=%VSBASE%\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat"
-) else if exist "%VSBASE%\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" (
-  set "VSCONFIG=%VSBASE%\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
-) else if exist "%VSBASE%\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" (
-  set "VSCONFIG=%VSBASE%\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
-) else if exist "%VSBASE%\18\Insiders\VC\Auxiliary\Build\vcvarsall.bat" (
-  set "VSCONFIG=%VSBASE%\18\Insiders\VC\Auxiliary\Build\vcvarsall.bat"
-)
-
-if not defined VSCONFIG (
-  for /f "usebackq delims=" %%i in (`dir /b /s "%VSBASE%\\*\\VC\\Auxiliary\\Build\\vcvarsall.bat" 2^>nul`) do (
-    echo %%i | findstr /i "\\Professional\\" >nul && set "VSCONFIG=%%i"
-    if not defined VSCONFIG set "VSCONFIG=%%i"
-  )
-)
+call :find_vcvars_in_base "%ProgramFiles%\Microsoft Visual Studio"
+if not defined VSCONFIG call :find_vcvars_in_base "%ProgramFiles(x86)%\Microsoft Visual Studio"
 
 if not defined VSCONFIG goto setup_error_not_found
 for %%i in ("%VSCONFIG%\..\..\..\..") do set "VS_INSTALL=%%~fi"
@@ -240,7 +233,9 @@ set "CMAKE_INCLUDE_PATH="
 set "CMAKE_LIBRARY_PATH="
 set "CMAKE_PREFIX_PATH="
 set "PKG_CONFIG_PATH="
-call "%VSCONFIG%" x64
+call :resolve_vcvars_arch
+if errorlevel 1 exit /b %ERRORLEVEL%
+call "%VSCONFIG%" %VCVARS_ARCH%
 if errorlevel 1 goto setup_error_vcvars
 
 set "VCPKG_VISUAL_STUDIO_PATH=%VS_INSTALL%"
@@ -256,12 +251,40 @@ exit /b 0
 
 :setup_error_not_found
 echo [build.bat] Error: Could not locate a Visual Studio installation with C++ tools.
-echo [build.bat] Install Visual Studio 2022 or VS 18 Insiders with the "Desktop development with C++" workload.
+echo [build.bat] Install Visual Studio 2019 or newer, or Build Tools, with the "Desktop development with C++" workload.
 exit /b 1
 
 :setup_error_vcvars
 echo [build.bat] Error: Failed to initialize the Visual Studio developer environment.
 exit /b 1
+
+:resolve_vcvars_arch
+set "VCVARS_ARCH=%PROCESSOR_ARCHITECTURE%"
+if /I "%PROCESSOR_ARCHITEW6432%"=="ARM64" set "VCVARS_ARCH=ARM64"
+if /I "%VCVARS_ARCH%"=="ARM64" (
+  set "VCVARS_ARCH=arm64"
+) else (
+  set "VCVARS_ARCH=x64"
+)
+exit /b 0
+
+:find_vcvars_in_base
+set "VSBASE=%~1"
+if not exist "%VSBASE%" exit /b 0
+
+for %%y in (18 2022 2019) do (
+  for %%e in (Insiders Preview Enterprise Professional Community BuildTools) do (
+    if exist "%VSBASE%\%%y\%%e\VC\Auxiliary\Build\vcvarsall.bat" (
+      set "VSCONFIG=%VSBASE%\%%y\%%e\VC\Auxiliary\Build\vcvarsall.bat"
+      exit /b 0
+    )
+  )
+)
+
+for /f "usebackq delims=" %%i in (`dir /b /s "%VSBASE%\vcvarsall.bat" 2^>nul`) do (
+  echo %%i | findstr /i "\\VC\\Auxiliary\\Build\\vcvarsall.bat$" >nul && if not defined VSCONFIG set "VSCONFIG=%%i"
+)
+exit /b 0
 
 :show_help
 echo tightrope build commands
