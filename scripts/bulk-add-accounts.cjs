@@ -36,10 +36,27 @@ const CONSENT_BUTTON_SELECTORS = [
   'button[name="action"][value="consent"]',
   'button[data-testid="consent-continue"]',
   'button[data-testid="allow-button"]',
+  'button:has-text("Continue to Codex")',
+  'button:has-text("Continue to ChatGPT")',
+  'button:has-text("Continue to OpenAI")',
   'button:has-text("Continue")',
+  'button:has-text("Next")',
   'button:has-text("Allow")',
+  'button:has-text("Authorize")',
   'button:has-text("Accept")',
+  'button:has-text("Agree")',
+  'button:has-text("Open Codex")',
+  'button:has-text("Use Codex")',
+  'button:has-text("Get started")',
+  'button:has-text("Start using")',
   'button:has-text("Продолжить")',
+  'div[role="button"]:has-text("Continue to Codex")',
+  'div[role="button"]:has-text("Continue")',
+  'div[role="button"]:has-text("Allow")',
+  'div[role="button"]:has-text("Authorize")',
+  'a:has-text("Continue to Codex")',
+  'a:has-text("Continue")',
+  'a:has-text("Open Codex")',
 ];
 const CODE_INPUT_SELECTORS = [
   'input[name="code"]',
@@ -106,9 +123,17 @@ async function retry(fn, attempts, delayMs, label) {
 async function findVisibleLocator(page, selectors, timeoutMs = 3000) {
   for (const selector of selectors) {
     try {
-      const locator = page.locator(selector).first();
-      await locator.waitFor({ state: 'visible', timeout: timeoutMs });
-      return locator;
+      const matches = page.locator(selector);
+      const count = Math.min(await matches.count(), 6);
+      for (let index = 0; index < count; index += 1) {
+        const locator = matches.nth(index);
+        try {
+          await locator.waitFor({ state: 'visible', timeout: timeoutMs });
+          if (await locator.isEnabled().catch(() => true)) {
+            return locator;
+          }
+        } catch {}
+      }
     } catch {}
   }
   return null;
@@ -165,6 +190,10 @@ async function pressEnterOnFirstVisible(page, selectors, timeoutMs = 3000) {
     } catch {}
   }
   return false;
+}
+
+async function clickPostLoginContinue(page, timeoutMs = 2000) {
+  return clickFirstVisible(page, CONSENT_BUTTON_SELECTORS, timeoutMs);
 }
 
 async function detectPageState(page) {
@@ -633,15 +662,15 @@ async function addAccount(account, browser, options) {
         break;
       }
 
-      if (await clickFirstVisible(page, CONSENT_BUTTON_SELECTORS, 3000)) {
-        console.log('  Consent/Continue page found, clicking...');
-        await sleep(2000);
-        break;
-      }
-
       const codeInput = await findVisibleLocator(page, CODE_INPUT_SELECTORS, 1000);
       const passwordAgain = await findVisibleLocator(page, PASSWORD_INPUT_SELECTORS, 1000);
       if (codeInput || passwordAgain) break;
+
+      if (await clickPostLoginContinue(page, 3000)) {
+        console.log('  Consent/Continue page found, clicking...');
+        await sleep(2000);
+        continue;
+      }
 
       await sleep(1000);
     }
@@ -651,6 +680,7 @@ async function addAccount(account, browser, options) {
     const authStart = Date.now();
     let lastCodeAttempt = 0;
     let codeCheckSource = null;
+    let lastContinueAttempt = 0;
 
     while (Date.now() - authStart < maxAuthTime) {
       let url;
@@ -688,14 +718,16 @@ async function addAccount(account, browser, options) {
       let needsCode, codeHint;
       try {
         needsCode = await findVisibleLocator(page, CODE_INPUT_SELECTORS, 1000);
-        codeHint = await page.locator('text=/enter the code|verification code|verify your email|we sent a code|enter the verification/i').first();
-        if (codeHint !== null) {
-          await codeHint.waitFor({ state: 'visible', timeout: 1000 });
-        }
       } catch (err) {
         console.log(`  Page selector error: ${err.message}`);
         await sleep(2000);
         continue;
+      }
+      try {
+        codeHint = page.locator('text=/enter the code|verification code|verify your email|we sent a code|enter the verification/i').first();
+        await codeHint.waitFor({ state: 'visible', timeout: 1000 });
+      } catch {
+        codeHint = null;
       }
 
       if (needsCode || codeHint) {
@@ -761,6 +793,16 @@ async function addAccount(account, browser, options) {
       }
       if (hasCaptcha && !options.headless) {
         console.log('  CAPTCHA detected — solve manually...');
+      }
+
+      const shouldTryContinue = !hasCaptcha && !needsCode && !codeHint && Date.now() - lastContinueAttempt > 2500;
+      if (shouldTryContinue) {
+        lastContinueAttempt = Date.now();
+        if (await clickPostLoginContinue(page, 1200)) {
+          console.log('  Post-login/Codex continue clicked');
+          await sleep(1500);
+          continue;
+        }
       }
 
       await sleep(1000);
