@@ -38,7 +38,7 @@ export function AboutDialog({ open, platform, appMeta, onClose }: AboutDialogPro
           <span className="about-kicker">{t('dialogs.about_title')}</span>
           <h3>{t('dialogs.about_app_title')}</h3>
         </div>
-        <button className="dialog-close" type="button" aria-label="Close" onClick={onClose}>
+        <button className="dialog-close" type="button" aria-label={t('common.close')} onClick={onClose}>
           &times;
         </button>
       </header>

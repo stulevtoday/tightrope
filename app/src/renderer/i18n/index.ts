@@ -13,7 +13,7 @@ i18n
       ru: { translation: ru },
     },
     fallbackLng: 'en',
-    interpolation: { escapeValue: false },
+    interpolation: { escapeValue: false, prefix: '{', suffix: '}' },
     detection: {
       order: ['localStorage', 'navigator'],
       lookupLocalStorage: 'tightrope-language',

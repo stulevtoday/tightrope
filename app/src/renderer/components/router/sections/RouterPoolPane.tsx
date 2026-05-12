@@ -80,29 +80,29 @@ function clampPercent(value: number): number {
 
 function primaryQuotaWindowLabel(account: Account): string {
   if (account.plan === 'free') {
-    return 'Weekly';
+    return i18next.t('common.weekly');
   }
   const windowSeconds = account.quotaPrimaryWindowSeconds;
   if (typeof windowSeconds === 'number' && Number.isFinite(windowSeconds) && windowSeconds > 0) {
     if (windowSeconds <= 6 * 60 * 60) {
-      return '5-hour';
+      return i18next.t('common.hour_window', { hours: 5 });
     }
     if (windowSeconds >= 6 * 24 * 60 * 60) {
-      return 'Weekly';
+      return i18next.t('common.weekly');
     }
     if (windowSeconds >= 20 * 60 * 60 && windowSeconds <= 28 * 60 * 60) {
-      return 'Daily';
+      return i18next.t('common.daily');
     }
     const roundedHours = Math.round(windowSeconds / (60 * 60));
     if (roundedHours >= 1 && roundedHours <= 23) {
-      return `${roundedHours}-hour`;
+      return i18next.t('common.hour_window', { hours: roundedHours });
     }
     const roundedDays = Math.round(windowSeconds / (24 * 60 * 60));
     if (roundedDays >= 2) {
-      return `${roundedDays}-day`;
+      return i18next.t('common.day_window', { days: roundedDays });
     }
   }
-  return '5-hour';
+  return i18next.t('common.hour_window', { hours: 5 });
 }
 
 function hasPositiveFiniteNumber(value: number | null | undefined): value is number {
@@ -231,21 +231,21 @@ function formatResetCountdown(resetAtMs: number | null, nowMs: number): string |
   const remainingMs = Math.max(0, resetAtMs - nowMs);
   const totalMinutes = Math.ceil(remainingMs / (60 * 1000));
   if (totalMinutes <= 0) {
-    return 'now';
+    return i18next.t('common.now');
   }
   const days = Math.floor(totalMinutes / (24 * 60));
   const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
   const minutes = totalMinutes % 60;
   if (days > 0) {
     if (hours > 0) {
-      return `${days}d${hours}h${minutes}m`;
+      return i18next.t('common.countdown_d_h_m', { days, hours, minutes });
     }
-    return `${days}d${minutes}m`;
+    return i18next.t('common.countdown_d_h_m', { days, hours: 0, minutes });
   }
   if (hours > 0) {
-    return `${hours}h${minutes}m`;
+    return i18next.t('common.countdown_h_m', { hours, minutes });
   }
-  return `${minutes}m`;
+  return i18next.t('common.countdown_m', { minutes });
 }
 
 function planRelevantRemainingPercent(account: Account): number | null {
@@ -824,7 +824,7 @@ export function RouterPoolPane({
             </>
           ) : null}
         </div>
-        <span style={{ display: 'none' }}>{t('router.pool_routed_account')}: {accounts.find((account) => account.id === selectedAccountId)?.name ?? 'all'}</span>
+        <span style={{ display: 'none' }}>{t('router.pool_routed_account')}: {accounts.find((account) => account.id === selectedAccountId)?.name ?? t('common.all')}</span>
         <div
           className={`accounts-list${lockGroupConnected ? ' lock-group-active' : ''}${lockGroupRoutingActive ? ' lock-group-routing-active' : ''}`}
           id="accountsList"
@@ -881,7 +881,7 @@ export function RouterPoolPane({
               accountResetAtMsForSort(account),
               trafficNowMs,
             );
-            const weeklyRemainingLabel = primaryWindowLabel === '5-hour' && hasSupplementaryWeeklyQuota(account)
+            const weeklyRemainingLabel = primaryWindowLabel === t('common.hour_window', { hours: 5 }) && hasSupplementaryWeeklyQuota(account)
               ? formatRemainingLabel(
                   secondaryUsage === null ? null : secondaryRemaining,
                   supplementaryWeeklyResetAtMs(account),

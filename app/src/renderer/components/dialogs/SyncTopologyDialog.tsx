@@ -24,7 +24,7 @@ export function ConnectedSyncTopologyDialog() {
 }
 
 function fmt(n: number): string {
-  return n.toLocaleString();
+  return n.toLocaleString(i18next.language);
 }
 
 function fmtFloat(n: number): string {
@@ -39,7 +39,7 @@ function heartbeatDisplay(peer: ClusterPeerStatus): string {
 
 function probeDisplay(peer: ClusterPeerStatus): string {
   if (peer.last_probe_duration_ms === null) return '—';
-  return `${peer.last_probe_duration_ms}ms`;
+  return `${peer.last_probe_duration_ms}${i18next.t('common.ms_unit')}`;
 }
 
 function formatSince(ts: number | null): string {
@@ -54,7 +54,11 @@ function formatSince(ts: number | null): string {
 
 function roleLabel(role: string): string {
   if (!role) return i18next.t('common.unknown');
-  return role.charAt(0).toUpperCase() + role.slice(1);
+  if (role === 'leader') return i18next.t('common.role_leader');
+  if (role === 'follower') return i18next.t('common.role_follower');
+  if (role === 'candidate') return i18next.t('common.role_candidate');
+  if (role === 'standalone') return i18next.t('common.role_standalone');
+  return role;
 }
 
 interface StatRow {
@@ -252,7 +256,7 @@ export function SyncTopologyDialog({ open, status, onClose }: SyncTopologyDialog
     [peers],
   );
 
-  const noStatusRows: StatRow[] = [{ key: 'Status', value: 'No cluster telemetry available yet.', tone: 'warn' }];
+  const noStatusRows: StatRow[] = [{ key: t('settings.sync_status_label'), value: t('settings.sync_no_cluster_telemetry'), tone: 'warn' }];
 
   function renderRows(rows: StatRow[]) {
     return (
@@ -277,27 +281,27 @@ export function SyncTopologyDialog({ open, status, onClose }: SyncTopologyDialog
     >
       <header className="sync-popup-header">
         <div className="sync-popup-header-left">
-          <span className="eyebrow">Cluster</span>
-          <h3>Synchronization</h3>
+          <span className="eyebrow">{t('dialogs.sync_topology_eyebrow')}</span>
+          <h3>{t('dialogs.sync_topology_title')}</h3>
         </div>
         <div className="sync-popup-meta">
           <span>
-            Leader{' '}
+            {t('dialogs.sync_topology_leader')}{' '}
             <strong className="accent-val">{leaderId ?? localId}</strong>
           </span>
           <span>
-            Term <strong>{fmt(term)}</strong>
+            {t('dialogs.sync_topology_term')} <strong>{fmt(term)}</strong>
           </span>
           <span>
-            Commit <strong>#{fmt(commitIndex)}</strong>
+            {t('dialogs.sync_topology_commit')} <strong>#{fmt(commitIndex)}</strong>
           </span>
         </div>
-        <button className="dialog-close" type="button" aria-label="Close" onClick={onClose}>
+        <button className="dialog-close" type="button" aria-label={t('common.close')} onClick={onClose}>
           &times;
         </button>
       </header>
 
-      <div className="sync-popup-tabs" role="tablist" aria-label="Cluster detail tabs">
+      <div className="sync-popup-tabs" role="tablist" aria-label={t('settings.sync_cluster_detail_tabs')}>
         <button
           className={`sync-popup-tab${activeTab === 'overview' ? ' active' : ''}`}
           type="button"
@@ -305,7 +309,7 @@ export function SyncTopologyDialog({ open, status, onClose }: SyncTopologyDialog
           aria-selected={activeTab === 'overview'}
           onClick={() => setActiveTab('overview')}
         >
-          Overview
+          {t('dialogs.sync_topology_overview')}
         </button>
         <button
           className={`sync-popup-tab${activeTab === 'stats' ? ' active' : ''}`}
@@ -314,12 +318,12 @@ export function SyncTopologyDialog({ open, status, onClose }: SyncTopologyDialog
           aria-selected={activeTab === 'stats'}
           onClick={() => setActiveTab('stats')}
         >
-          Stats
+          {t('dialogs.sync_topology_stats')}
         </button>
       </div>
 
       {activeTab === 'overview' ? (
-        <div className="sync-topology-area" ref={areaRef} role="tabpanel" aria-label="Cluster overview">
+        <div className="sync-topology-area" ref={areaRef} role="tabpanel" aria-label={t('settings.sync_cluster_overview')}>
           <svg className="sync-topology-svg" ref={svgRef} />
 
           <div className="sync-nodes-layer">
@@ -330,19 +334,19 @@ export function SyncTopologyDialog({ open, status, onClose }: SyncTopologyDialog
               </div>
               <div className="sync-node-stats">
                 <div className="sync-node-stat">
-                  <span className="label">Commit</span>
+                  <span className="label">{t('dialogs.sync_topology_node_commit')}</span>
                   <span className="value synced">{fmt(commitIndex)}</span>
                 </div>
                 <div className="sync-node-stat">
-                  <span className="label">Applied</span>
+                  <span className="label">{t('dialogs.sync_topology_node_applied')}</span>
                   <span className="value">{fmt(commitIndex)}</span>
                 </div>
                 <div className="sync-node-stat">
-                  <span className="label">Term</span>
+                  <span className="label">{t('dialogs.sync_topology_node_term')}</span>
                   <span className="value">{fmt(term)}</span>
                 </div>
                 <div className="sync-node-stat">
-                  <span className="label">Log</span>
+                  <span className="label">{t('dialogs.sync_topology_node_log')}</span>
                   <span className="value">{fmt(journalEntries)}</span>
                 </div>
               </div>
@@ -367,19 +371,19 @@ export function SyncTopologyDialog({ open, status, onClose }: SyncTopologyDialog
                       </div>
                       <div className="sync-node-stats">
                         <div className="sync-node-stat">
-                          <span className="label">Match</span>
+                          <span className="label">{t('dialogs.sync_topology_node_match')}</span>
                           <span className={`value ${lagClass}`}>{fmt(peer.match_index)}</span>
                         </div>
                         <div className="sync-node-stat">
-                          <span className="label">Lag</span>
+                          <span className="label">{t('dialogs.sync_topology_node_lag')}</span>
                           <span className={`value ${lagClass}`}>{fmt(peer.replication_lag_entries)}</span>
                         </div>
                         <div className="sync-node-stat">
-                          <span className="label">Heartbeat</span>
+                          <span className="label">{t('dialogs.sync_topology_node_heartbeat')}</span>
                           <span className="value">{heartbeatDisplay(peer)}</span>
                         </div>
                         <div className="sync-node-stat">
-                          <span className="label">Probe</span>
+                          <span className="label">{t('dialogs.sync_topology_node_probe')}</span>
                           <span className="value">{probeDisplay(peer)}</span>
                         </div>
                       </div>
@@ -391,23 +395,23 @@ export function SyncTopologyDialog({ open, status, onClose }: SyncTopologyDialog
           </div>
         </div>
       ) : (
-        <div className="sync-stats-area" role="tabpanel" aria-label="Cluster stats">
+        <div className="sync-stats-area" role="tabpanel" aria-label={t('settings.sync_cluster_stats')}>
           <section className="sync-stats-group">
-            <h4>Cluster</h4>
+            <h4>{t('dialogs.sync_topology_cluster')}</h4>
             {renderRows(status ? clusterStats : noStatusRows)}
           </section>
           <section className="sync-stats-group">
-            <h4>Replication Lag</h4>
+            <h4>{t('dialogs.sync_topology_replication_lag')}</h4>
             {renderRows(status ? lagStats : noStatusRows)}
           </section>
           <section className="sync-stats-group">
-            <h4>Ingress Socket</h4>
+            <h4>{t('dialogs.sync_topology_ingress_socket')}</h4>
             {renderRows(status ? ingressStats : noStatusRows)}
           </section>
           <section className="sync-stats-group">
-            <h4>Peers</h4>
+            <h4>{t('dialogs.sync_topology_peers')}</h4>
             {peerStats.length === 0 ? (
-              <p className="sync-stats-empty">No discovered peers.</p>
+              <p className="sync-stats-empty">{t('dialogs.sync_topology_no_peers')}</p>
             ) : (
               <div className="sync-peer-stats-grid">
                 {peerStats.map(({ peer, rows }) => (
@@ -431,19 +435,19 @@ export function SyncTopologyDialog({ open, status, onClose }: SyncTopologyDialog
         <div className="sync-popup-footer">
           <div className="sync-legend-item">
             <div className="sync-legend-swatch" style={{ background: 'var(--accent)' }} />
-            <span>Replicating down</span>
+            <span>{t('dialogs.sync_topology_replicating_down')}</span>
           </div>
           <div className="sync-legend-item">
             <div className="sync-legend-swatch" style={{ background: '#8a9fd4' }} />
-            <span>Replicating up</span>
+            <span>{t('dialogs.sync_topology_replicating_up')}</span>
           </div>
           <div className="sync-legend-item">
             <div className="sync-legend-swatch" style={{ background: 'var(--warn)' }} />
-            <span>Lagging</span>
+            <span>{t('dialogs.sync_topology_lagging')}</span>
           </div>
           <div className="sync-legend-item">
             <div className="sync-legend-swatch" style={{ background: 'var(--ok)' }} />
-            <span>Synced</span>
+            <span>{t('dialogs.sync_topology_synced')}</span>
           </div>
         </div>
       ) : null}

@@ -1,52 +1,24 @@
+# Dependencies
 node_modules/
-build/
-dist/
-release/
-.vscode/
-.idea/
 
-*.db
-*.db-shm
-*.db-wal
-*.sqlite
-*.sqlite3
-
-auth.json
-accounts.txt
-.env
-.env.*
-
-app/native/*.node
-app/.electron-dev/
-
-vcpkg/
-vcpkg_installed/
-
-# macOS
-.DS_Store
-
-# Node
-node_modules/
-npm-debug.log*
-
-# Build
+# Build outputs
 build/
 build-*/
 dist/
-release/
 out/
+release/
 
-# CMake
-CMakeFiles/
+# Native build/cache outputs
 CMakeCache.txt
+CMakeFiles/
 cmake-build-*/
 compile_commands.json
-
-# vcpkg
+vcpkg/
 vcpkg_installed/
-vcpkg/buildtrees/
-vcpkg/packages/
-vcpkg/downloads/
+
+# Electron local runtime data
+app/.electron-dev/
+app/bulk-add-accounts.cjs
 
 # Databases
 *.db
@@ -55,17 +27,22 @@ vcpkg/downloads/
 *.sqlite
 *.sqlite3
 
-# Secrets
+# Secrets and local account imports
 .env
 .env.*
 auth.json
+accounts.txt
 
 # Native binaries
-*.node
-*.dylib
-*.so
 *.a
+*.dylib
+*.node
+*.so
 
-# IDE
-.vscode/
+# Logs
+npm-debug.log*
+
+# IDE and OS files
+.DS_Store
 .idea/
+.vscode/

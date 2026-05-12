@@ -43,7 +43,7 @@ export interface TightropeService {
   backendStatusRequest: () => Promise<RuntimeBackendStateResponse>;
   backendStartRequest: () => Promise<RuntimeBackendStateResponse>;
   backendStopRequest: () => Promise<RuntimeBackendStateResponse>;
-  importAccountRequest: (email: string, provider: string) => Promise<RuntimeAccount>;
+  importAccountRequest: (email: string, provider: string, accessToken?: string, refreshToken?: string) => Promise<RuntimeAccount>;
   previewSqlImportRequest: (payload: SqlImportPreviewRequestPayload) => Promise<SqlImportPreviewResponse>;
   pickSqlImportSourcePathRequest: () => Promise<string | null>;
   applySqlImportRequest: (payload: SqlImportApplyRequestPayload) => Promise<SqlImportApplyResponse>;
@@ -535,7 +535,7 @@ export async function backendStopRequest(): Promise<RuntimeBackendStateResponse>
 }
 
 export async function importAccountRequest(email: string, provider: string, accessToken?: string, refreshToken?: string): Promise<RuntimeAccount> {
-  const payload: Record<string, string> = { email, provider };
+  const payload: { email: string; provider: string; access_token?: string; refresh_token?: string } = { email, provider };
   if (accessToken) payload.access_token = accessToken;
   if (refreshToken) payload.refresh_token = refreshToken;
   const api = window.tightrope;

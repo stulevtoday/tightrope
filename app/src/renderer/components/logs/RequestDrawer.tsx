@@ -88,7 +88,7 @@ export function RequestDrawer() {
               ) : null}
               <dt>{t('drawer.col_status')}</dt>
               <dd>
-                <span className={`status-badge ${statusClass(row.status)}`}>{row.status}</span>
+                <span className={`status-badge ${statusClass(row.status)}`}>{t(`common.status_${row.status}`)}</span>
               </dd>
               {row.errorCode ? (
                 <>

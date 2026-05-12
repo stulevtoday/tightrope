@@ -1300,6 +1300,11 @@
         grid-template-columns: minmax(0, 1fr);
       }
 
+      .accounts-sidebar .account-meta-row,
+      .accounts-sidebar .account-meta-row-secondary {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
       .account-top {
         align-items: center;
       }
@@ -1728,6 +1733,11 @@
       .summary-grid span {
         color: var(--text-secondary);
         font-size: 11px;
+      }
+
+      .accounts-sidebar .account-meta {
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
 
       .account-meta strong,
@@ -3012,7 +3022,7 @@
       /* ── Accounts Page ── */
 
       .accounts-page {
-        grid-template-columns: 280px minmax(0, 1fr);
+        grid-template-columns: minmax(320px, 34%) minmax(0, 1fr);
         grid-template-rows: minmax(0, 1fr);
         gap: 1px;
         background: var(--gap-fill);
@@ -3039,18 +3049,22 @@
       .accounts-header-actions {
         display: inline-flex;
         align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
         gap: 0.35rem;
+        min-width: 0;
       }
 
       .accounts-filter-bar {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr) minmax(7.5rem, auto);
         gap: 0.3rem;
         padding: 0.45rem 0.55rem;
         border-bottom: 1px solid var(--border);
       }
 
       .accounts-filter-bar select {
+        min-width: 0;
         font: inherit;
         font-size: 11.5px;
         background: var(--surface-3);
@@ -3106,6 +3120,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
         gap: 0.4rem;
         margin-bottom: 0.4rem;
         min-width: 0;
@@ -3128,7 +3143,13 @@
       .usage-label-row {
         display: flex;
         justify-content: space-between;
+        gap: 0.5rem;
         font-size: 12px;
+      }
+
+      .usage-label-row span:first-child {
+        min-width: 0;
+        overflow-wrap: anywhere;
       }
 
       .usage-label-row span:last-child {
@@ -3161,7 +3182,7 @@
 
       .token-grid {
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
         gap: 0.15rem 0.6rem;
         font-size: 12px;
       }
@@ -3172,6 +3193,7 @@
 
       .token-grid dd {
         margin: 0;
+        overflow-wrap: anywhere;
       }
 
       .token-ok { color: var(--ok); }
@@ -3198,6 +3220,7 @@
 
       .account-actions {
         display: flex;
+        flex-wrap: wrap;
         gap: 0.3rem;
         padding-top: 0.45rem;
         border-top: 1px solid var(--border);
@@ -4300,6 +4323,15 @@
       }
 
       @media (max-width: 720px) {
+        .accounts-page {
+          grid-template-columns: 1fr;
+          grid-template-rows: minmax(16rem, 42%) minmax(0, 1fr);
+        }
+
+        .accounts-filter-bar {
+          grid-template-columns: 1fr;
+        }
+
         .nav-rail {
           grid-template-columns: 1fr;
         }

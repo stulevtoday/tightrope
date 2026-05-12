@@ -100,6 +100,7 @@ function createServiceMocks(): TightropeService {
     getSettingsRequest: vi.fn(async () => ({ ...defaultDashboardSettings })),
     updateSettingsRequest: vi.fn(async (update) => ({ ...defaultDashboardSettings, ...update })),
     changeDatabasePassphraseRequest: vi.fn(async () => {}),
+    exportDatabaseRequest: vi.fn(async () => ({ success: true })),
     listFirewallIpsRequest: vi.fn(async () => ({ mode: 'allow_all' as const, entries: [] })),
     addFirewallIpRequest: vi.fn(async () => true),
     removeFirewallIpRequest: vi.fn(async () => true),

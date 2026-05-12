@@ -143,7 +143,7 @@ export function createOAuthFlowBrowserActions(deps: OAuthFlowBrowserActionDeps):
         await deps.finalizeOauthAccountSuccess(
           status.callbackUrl ?? null,
           `oauth-${Date.now().toString(36)}`,
-'browser oauth completed and account imported',
+          i18next.t('status.browser_oauth_completed'),
          );
          return;
        }

@@ -258,7 +258,7 @@ export async function refreshAllAccountsTelemetryAction(deps: RefreshAllTelemetr
     let processedCount = 0;
     const publishProgress = (): void => {
       publishStatusProgressNotice({
-        label: 'Refreshing accounts telemetry',
+        label: i18next.t('status.telemetry_queue_refreshing'),
         current: processedCount,
         total,
         level: failedCount > 0 ? 'warn' : 'info',

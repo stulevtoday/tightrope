@@ -47,7 +47,7 @@ export function LogsPage() {
                     <td>{accounts.formatNumber(row.tokens)}</td>
                     <td>{row.latency} ms</td>
                     <td>
-                      <span className={`status-badge ${statusClass(row.status)}`}>{row.status}</span>
+                      <span className={`status-badge ${statusClass(row.status)}`}>{t(`common.status_${row.status}`)}</span>
                     </td>
                   </tr>
                 );

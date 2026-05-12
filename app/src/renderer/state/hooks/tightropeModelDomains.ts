@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import i18next from 'i18next';
 import type { Dispatch, SetStateAction } from 'react';
 import type { TightropeService } from '../../services/tightrope';
 import type { Account, AppRuntimeState, SyncEvent } from '../../shared/types';
@@ -109,7 +110,7 @@ function quotaSignalTracks(account: Account): QuotaSignalTrack[] {
     tracks.push({
       key: `${account.id}:primary`,
       usedPercent: clampPercent(account.quotaPrimary),
-      windowLabel: account.plan === 'free' ? 'weekly' : '5-hour',
+      windowLabel: account.plan === 'free' ? i18next.t('common.weekly') : i18next.t('common.hour_window', { hours: 5 }),
       resetAtMs: account.quotaPrimaryResetAtMs ?? null,
     });
   }
@@ -117,7 +118,7 @@ function quotaSignalTracks(account: Account): QuotaSignalTrack[] {
     tracks.push({
       key: `${account.id}:secondary`,
       usedPercent: clampPercent(account.quotaSecondary),
-      windowLabel: 'weekly',
+      windowLabel: i18next.t('common.weekly'),
       resetAtMs: account.quotaSecondaryResetAtMs ?? null,
     });
   }
@@ -356,7 +357,7 @@ export function useTightropeModelDomains(input: UseTightropeModelDomainsInput): 
         if (currentMilestone > previousMilestone && currentMilestone >= QUOTA_MILESTONE_STEPS[0]) {
           const level: StatusNoticeLevel = currentMilestone >= 95 ? 'error' : 'warn';
           input.pushRuntimeEvent(
-            `${account.name} ${track.windowLabel} quota at ${currentMilestone}% used`,
+            i18next.t('status.quota_milestone', { account: account.name, window: track.windowLabel, percent: currentMilestone }),
             level,
           );
         }

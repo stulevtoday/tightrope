@@ -128,7 +128,7 @@ function usageRowsFromAccount(detail: Account): UsageRow[] {
         key: 'short',
         source: shortWindow.source,
         label: i18next.t('router.pool_5h_remaining'),
-        trendLabel: '5h',
+        trendLabel: i18next.t('common.hour_window', { hours: 5 }),
         usedPercent: shortWindow.usedPercent,
         resetAtMs: shortWindow.resetAtMs,
       });
@@ -147,7 +147,7 @@ function usageRowsFromAccount(detail: Account): UsageRow[] {
       key: 'weekly',
       source: weeklyWindow.source,
       label: i18next.t('router.pool_weekly_remaining'),
-      trendLabel: 'Weekly',
+      trendLabel: i18next.t('common.weekly'),
       usedPercent: weeklyWindow.usedPercent,
       resetAtMs: weeklyWindow.resetAtMs,
     });
@@ -159,7 +159,7 @@ function usageRowsFromAccount(detail: Account): UsageRow[] {
       key: 'weekly',
       source: fallbackWindow.source,
       label: i18next.t('router.pool_weekly_remaining'),
-      trendLabel: 'Weekly',
+      trendLabel: i18next.t('common.weekly'),
       usedPercent: fallbackWindow.usedPercent,
       resetAtMs: fallbackWindow.resetAtMs,
     });

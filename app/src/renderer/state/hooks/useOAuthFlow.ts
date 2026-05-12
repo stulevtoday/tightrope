@@ -300,7 +300,7 @@ export function useOAuthFlow(options: UseOAuthFlowOptions): UseOAuthFlowResult {
     try {
       const payload = extractImportAccountPayload(JSON.parse(await readFileText(file)));
       if (!payload) {
-        throw new Error('Import file must include an account email');
+        throw new Error(i18next.t('dialogs.add_account_import_missing_email'));
       }
       const imported = await importAccountRequest(payload.email, payload.provider, payload.access_token, payload.refresh_token);
       await options.refreshAccountsFromNative();
@@ -315,7 +315,7 @@ export function useOAuthFlow(options: UseOAuthFlowOptions): UseOAuthFlowResult {
       options.pushRuntimeEvent(i18next.t('status.account_imported', { email: imported.email }), 'success');
       void options.refreshUsageTelemetryAfterAccountAdd(imported.accountId, imported.email);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Import failed';
+      const message = error instanceof Error ? error.message : i18next.t('dialogs.add_account_import_failed');
       setAddAccountErrorState(message);
     }
   }

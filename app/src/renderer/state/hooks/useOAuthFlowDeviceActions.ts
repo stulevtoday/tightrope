@@ -1,4 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import i18next from 'i18next';
 import type { TightropeService } from '../../services/tightrope';
 import type { AddAccountStep, AppRuntimeState } from '../../shared/types';
 import { DEFAULT_DEVICE_EXPIRES_SECONDS } from './useOAuthFlowHelpers';
@@ -88,11 +89,11 @@ export function createOAuthFlowDeviceActions(deps: OAuthFlowDeviceActionDeps): O
               await deps.finalizeOauthAccountSuccess(
                 status.callbackUrl ?? null,
                 deps.state.deviceUserCode || `device-${Date.now().toString(36)}`,
-                'device oauth completed and account imported',
+                i18next.t('status.device_oauth_completed'),
               );
             } else if (status.status === 'error') {
               deps.clearDeviceFlowTimers();
-              const message = status.errorMessage ?? 'Device OAuth failed';
+              const message = status.errorMessage ?? i18next.t('status.device_oauth_failed');
               deps.setAddAccountErrorState(message);
             }
           })

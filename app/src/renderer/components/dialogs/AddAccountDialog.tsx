@@ -28,7 +28,7 @@ export function AddAccountDialog() {
     <dialog open id="addAccountDialog" onClick={(event) => event.currentTarget === event.target && accounts.closeAddAccountDialog()}>
       <header className="dialog-header">
         <h3>{titleForStep(step, t)}</h3>
-        <button className="dialog-close" type="button" aria-label="Close" onClick={accounts.closeAddAccountDialog}>
+        <button className="dialog-close" type="button" aria-label={t('common.close')} onClick={accounts.closeAddAccountDialog}>
           &times;
         </button>
       </header>

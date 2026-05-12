@@ -1,5 +1,6 @@
 import type { ClusterStatus, SyncConflictResolution } from '../../../shared/types';
 import { useTranslation } from 'react-i18next';
+import i18next from 'i18next';
 
 interface DatabaseSyncSectionProps {
   syncEnabled: boolean;
@@ -62,13 +63,13 @@ interface DatabaseSyncSectionProps {
 }
 
 function formatLastSync(lastSyncAt: number | null): string {
-  if (lastSyncAt === null) return 'never';
+  if (lastSyncAt === null) return i18next.t('common.never');
   const deltaSeconds = Math.max(0, Math.floor((Date.now() - lastSyncAt) / 1000));
-  if (deltaSeconds < 60) return `${deltaSeconds}s ago`;
+  if (deltaSeconds < 60) return i18next.t('common.time_ago_seconds', { seconds: deltaSeconds });
   const minutes = Math.floor(deltaSeconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return i18next.t('common.time_ago_minutes', { minutes });
   const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
+  return i18next.t('common.time_ago_hours', { hours });
 }
 
 export function DatabaseSyncSection({
@@ -134,6 +135,9 @@ export function DatabaseSyncSection({
   const peers = clusterStatus.peers ?? [];
   const connectedPeers = peers.filter((peer) => peer.state === 'connected').length;
   const unreachablePeers = peers.filter((peer) => peer.state === 'unreachable').length;
+  const clusterRoleLabel = clusterStatus.enabled
+    ? t(`common.role_${clusterStatus.role}`, { defaultValue: clusterStatus.role })
+    : t('settings.db_sync_role_disabled');
 
   return (
     <div className="settings-group">
@@ -559,10 +563,10 @@ export function DatabaseSyncSection({
         <div style={{ display: 'grid', gap: '0.3rem', fontSize: '11.5px', textAlign: 'right' }}>
           <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', justifyContent: 'flex-end' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 500 }}>
-              {clusterStatus.enabled ? (clusterStatus.role === 'standalone' ? t('settings.db_sync_role_standalone') : clusterStatus.role) : t('settings.db_sync_role_disabled')}
+              {clusterRoleLabel}
             </span>
-            <span style={{ color: 'var(--text-secondary)' }}>Term {clusterStatus.term}</span>
-            <span style={{ color: 'var(--text-secondary)' }}>Commit #{clusterStatus.commit_index}</span>
+            <span style={{ color: 'var(--text-secondary)' }}>{t('settings.sync_term_label')} {clusterStatus.term}</span>
+            <span style={{ color: 'var(--text-secondary)' }}>{t('settings.sync_commit_hash', { index: clusterStatus.commit_index })}</span>
           </div>
           <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', justifyContent: 'flex-end' }}>
             <span style={{ color: 'var(--ok)' }}>

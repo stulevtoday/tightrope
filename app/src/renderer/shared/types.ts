@@ -598,7 +598,7 @@ export interface ElectronApi {
   listStickySessions: (payload?: { limit?: number; offset?: number }) => Promise<RuntimeStickySessionsResponse>;
   listRequestLogs: (payload?: { limit?: number; offset?: number }) => Promise<RuntimeRequestLogsResponse>;
   listAccountTraffic: () => Promise<RuntimeAccountTrafficResponse>;
-  importAccount: (payload: { email: string; provider: string }) => Promise<RuntimeAccount>;
+  importAccount: (payload: { email: string; provider: string; access_token?: string; refresh_token?: string }) => Promise<RuntimeAccount>;
   previewSqlImport: (payload: SqlImportPreviewRequestPayload) => Promise<SqlImportPreviewResponse>;
   pickSqlImportSourcePath?: () => Promise<string | null>;
   applySqlImport: (payload: SqlImportApplyRequestPayload) => Promise<SqlImportApplyResponse>;

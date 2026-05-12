@@ -75,7 +75,7 @@ export function AccountImportDialog({ open, importWithoutOverwrite, onClose }: A
     <dialog open id="accountImportDialog" onClick={(event) => event.currentTarget === event.target && handleClose()}>
       <header className="dialog-header">
         <h3>{t('dialogs.account_import_title')}</h3>
-        <button className="dialog-close" type="button" aria-label="Close" onClick={handleClose}>
+        <button className="dialog-close" type="button" aria-label={t('common.close')} onClick={handleClose}>
           &times;
         </button>
       </header>

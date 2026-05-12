@@ -31,7 +31,7 @@ export function RequestsLedgerPane({
           <p className="eyebrow">{t('router.ledger_eyebrow')}</p>
           <h2>{t('router.ledger_title')}</h2>
         </div>
-        <div className="protocol-filters" aria-label="Protocol filters">
+        <div className="protocol-filters" aria-label={t('common.protocol_filters')}>
           <span className="filter-chip active">SSE</span>
           <span className="filter-chip active">WS</span>
           <span className="filter-chip">Compact</span>
@@ -39,7 +39,7 @@ export function RequestsLedgerPane({
         </div>
       </header>
       <div className="pane-body ledger-body">
-        <section className="ops-strip" aria-label="Key metrics">
+        <section className="ops-strip" aria-label={t('common.key_metrics')}>
           <article className="metric">
             <span>{t('router.ledger_req_min')}</span>
             <strong>{formatNumber(kpis.rpm)}</strong>
@@ -111,7 +111,7 @@ export function RequestsLedgerPane({
                       <td>{row.latency} ms</td>
                       <td>{scoreText}</td>
                       <td>
-                        <span className={`status-badge ${statusClass(row.status)}`}>{row.status}</span>
+                        <span className={`status-badge ${statusClass(row.status)}`}>{t(`common.status_${row.status}`)}</span>
                       </td>
                     </tr>
                   );

@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import { HARD_BLOCKED_STATES } from './defaults';
 import type {
   Account,
@@ -14,7 +15,7 @@ import type {
 import { hashToUnit, normalize } from '../shared/math';
 
 export function formatNumber(value: number): string {
-  return value.toLocaleString();
+  return value.toLocaleString(i18next.language);
 }
 
 export function nowStamp(date = new Date()): string {

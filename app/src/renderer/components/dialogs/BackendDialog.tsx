@@ -9,12 +9,14 @@ export function BackendDialog() {
   if (!runtime.backendDialogOpen) return null;
   const runtimeState = runtime.runtimeState;
   const routerState = currentRouterState(runtimeState);
+  const backendStateLabel = runtimeState.backend === 'running' ? t('common.state_running') : t('common.state_stopped');
+  const healthLabel = runtimeState.health === 'ok' ? t('common.status_ok') : runtimeState.health === 'warn' ? t('common.status_warn') : t('common.status_error');
 
   return (
     <dialog open id="backendDialog" onClick={(event) => event.currentTarget === event.target && runtime.closeBackendDialog()}>
       <header className="dialog-header">
         <h3>{t('dialogs.backend_title')}</h3>
-        <button className="dialog-close" type="button" aria-label="Close" onClick={runtime.closeBackendDialog}>
+        <button className="dialog-close" type="button" aria-label={t('common.close')} onClick={runtime.closeBackendDialog}>
           &times;
         </button>
       </header>
@@ -22,15 +24,15 @@ export function BackendDialog() {
         <div className="summary-grid">
           <div>
             <span>{t('dialogs.backend_router')}</span>
-            <strong>{routerState}</strong>
+            <strong>{t(`common.state_${routerState}`)}</strong>
           </div>
           <div>
             <span>{t('dialogs.backend_backend')}</span>
-            <strong>{runtimeState.backend}</strong>
+            <strong>{backendStateLabel}</strong>
           </div>
           <div>
             <span>{t('dialogs.backend_health')}</span>
-            <strong>{runtimeState.health}</strong>
+            <strong>{healthLabel}</strong>
           </div>
           <div>
             <span>{t('dialogs.backend_restart')}</span>

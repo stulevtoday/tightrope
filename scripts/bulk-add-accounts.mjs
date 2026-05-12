@@ -46,6 +46,11 @@ class ImapClient {
 
   connect() {
     return new Promise((resolve, reject) => {
+      const connectTimeout = setTimeout(() => {
+        reject(new Error(`IMAP connection timeout to ${this.host}:${this.port}`));
+        try { this.socket?.destroy(); } catch {}
+      }, 15000);
+
       const connectOptions = {
         host: this.host,
         port: this.port,
@@ -53,6 +58,7 @@ class ImapClient {
       };
 
       const onConnect = () => {
+        clearTimeout(connectTimeout);
         this.connected = true;
       };
 
@@ -70,13 +76,18 @@ class ImapClient {
       });
 
       this.socket.once('close', () => {
+        clearTimeout(connectTimeout);
         this.connected = false;
       });
 
       this.waitUntagged(/^.*/).then((greeting) => {
+        clearTimeout(connectTimeout);
         this.socket.removeListener('error', reject);
         resolve(greeting);
-      }).catch(reject);
+      }).catch((err) => {
+        clearTimeout(connectTimeout);
+        reject(err);
+      });
     });
   }
 
@@ -356,54 +367,161 @@ async function addAccount(account, browser, options) {
   console.log('  Opening auth URL...');
   const context = await browser.newContext();
   const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  page.setDefaultNavigationTimeout(30000);
 
   try {
-    await page.goto(oauthData.authorizationUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(oauthData.authorizationUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch((err) => {
+      console.log(`  NAV WARNING: ${err.message}`);
+    });
     await page.waitForTimeout(1500);
 
-    const emailInput = await page.$('input[name="email"], input[type="email"], input[id="email-input"]');
+    const emailInput = await page.$('input[name="email"], input[type="email"], input[id="email-input"], input[autocomplete="email"]');
     if (emailInput) {
+      await emailInput.click();
       await emailInput.fill(account.email);
-      await page.waitForTimeout(300);
-      const continueBtn = await page.$('button[type="submit"]') || await page.$('button[data-testid="login-button"]');
+      await page.waitForTimeout(500);
+      const continueBtn = await page.$('button[type="submit"], button[data-testid="login-button"], button[name="action"]');
       if (continueBtn) await continueBtn.click();
       else await emailInput.press('Enter');
       console.log(`  Email entered: ${account.email}`);
-      await page.waitForTimeout(2000);
     }
 
-    const passwordInput = await page.$('input[type="password"], input[name="password"]');
+    console.log('  Waiting for password field...');
+    let passwordInput = null;
+    for (let i = 0; i < 30; i++) {
+      try {
+        passwordInput = await page.$('input[type="password"], input[name="password"], input[id="password"]');
+      } catch {}
+      if (passwordInput) break;
+      const url = page.url();
+      if (url.includes('localhost:1455/auth/callback') || url.includes('tightrope://')) {
+        console.log('  OAuth callback received before password step');
+        break;
+      }
+      const oauthStatus = await getOAuthStatus();
+      if (oauthStatus.status === 'success') break;
+      await page.waitForTimeout(1000);
+    }
+
     if (passwordInput) {
       console.log('  Password field found, entering password...');
-      await passwordInput.fill(account.password);
-      await page.waitForTimeout(300);
-      const submitBtn = await page.$('button[type="submit"]');
-      if (submitBtn) await submitBtn.click();
-      else await passwordInput.press('Enter');
-      await page.waitForTimeout(2000);
+      try {
+        await passwordInput.click();
+        await passwordInput.fill(account.password);
+        await page.waitForTimeout(500);
+        const submitBtn = await page.$('button[type="submit"], button[name="action"], button[data-testid="login-button"]');
+        if (submitBtn) await submitBtn.click();
+        else await passwordInput.press('Enter');
+        console.log('  Password submitted');
+      } catch (err) {
+        console.log(`  Password entry error: ${err.message}`);
+      }
+      await page.waitForTimeout(3000);
     }
 
-    const maxAuthTime = 240000;
+    console.log('  Checking for consent/continue page...');
+    for (let i = 0; i < 10; i++) {
+      let currentUrl;
+      try { currentUrl = page.url(); } catch { currentUrl = ''; }
+      if (currentUrl.includes('localhost:1455/auth/callback') || currentUrl.includes('tightrope://')) {
+        console.log('  Callback received during consent check');
+        break;
+      }
+      const oauthStatus = await getOAuthStatus();
+      if (oauthStatus.status === 'success') {
+        console.log('  OAuth status: success (during consent check)');
+        break;
+      }
+
+      let consentBtn;
+      try {
+        consentBtn = await page.$(
+          'button[name="action"][value="consent"], ' +
+          'button[data-testid="consent-continue"], ' +
+          'button:has-text("Continue"), ' +
+          'button:has-text("Продолжить"), ' +
+          'button:has-text("Allow"), ' +
+          'button[type="submit"]:has-text("Continue"), ' +
+          'button[data-testid="allow-button"]'
+        );
+      } catch {
+        console.log('  Page context destroyed (likely navigated to callback) - checking OAuth status...');
+        const status = await getOAuthStatus();
+        if (status.status === 'success') {
+          console.log('  OAuth success after context destroy');
+        }
+        break;
+      }
+      if (consentBtn) {
+        console.log('  Consent/Continue page found, clicking...');
+        try {
+          await consentBtn.click({ timeout: 5000 });
+        } catch {
+          try { await consentBtn.click(); } catch {}
+        }
+        await page.waitForTimeout(3000).catch(() => {});
+        break;
+      }
+
+      let codeInput, passwordAgain;
+      try {
+        codeInput = await page.$('input[name="code"], input[aria-label*="code" i], input[placeholder*="code" i], input[type="tel"][maxlength="6"]');
+        passwordAgain = await page.$('input[type="password"]');
+      } catch { break; }
+      if (codeInput || passwordAgain) break;
+
+      await page.waitForTimeout(1000);
+    }
+
+    console.log('  Waiting for OAuth callback or code request...');
+    const maxAuthTime = options.manualTimeout || 240000;
     const authStart = Date.now();
     let lastCodeAttempt = 0;
     let codeCheckSource = null;
 
     while (Date.now() - authStart < maxAuthTime) {
-      const url = page.url();
+      let url;
+      try {
+        url = page.url();
+      } catch {
+        console.log('  Page context destroyed - checking OAuth status...');
+        const status = await getOAuthStatus();
+        if (status.status === 'success') {
+          console.log('  OAuth status: success (page navigated away)');
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
 
       if (url.includes('localhost:1455/auth/callback') || url.includes('tightrope://')) {
         console.log('  Callback received!');
         break;
       }
 
-      const oauthStatus = await getOAuthStatus();
+      let oauthStatus;
+      try {
+        oauthStatus = await getOAuthStatus();
+      } catch (err) {
+        console.log(`  OAuth status check error: ${err.message}`);
+        await page.waitForTimeout(2000);
+        continue;
+      }
       if (oauthStatus.status === 'success') {
         console.log('  OAuth status: success');
         break;
       }
 
-      const needsCode = await page.$('input[name="code"], input[aria-label*="code" i], input[placeholder*="code" i], input[type="tel"][maxlength="6"]');
-      const codeHint = await page.$('text=/enter the code|verification code|verify your email|we sent a code|enter the verification/i');
+      let needsCode, codeHint;
+      try {
+        needsCode = await page.$('input[name="code"], input[aria-label*="code" i], input[placeholder*="code" i], input[type="tel"][maxlength="6"]');
+        codeHint = await page.$('text=/enter the code|verification code|verify your email|we sent a code|enter the verification/i');
+      } catch (err) {
+        console.log(`  Page selector error: ${err.message}`);
+        await page.waitForTimeout(2000);
+        continue;
+      }
 
       if (needsCode || codeHint) {
         const timeSinceLastAttempt = Date.now() - lastCodeAttempt;
@@ -437,15 +555,19 @@ async function addAccount(account, browser, options) {
             console.log(`  Got verification code: ${code}`);
             const codeInput = needsCode || await page.$('input[type="tel"], input[maxlength="6"]');
             if (codeInput) {
-              await codeInput.fill('');
-              for (let i = 0; i < code.length; i++) {
-                await codeInput.type(code[i], { delay: 50 });
+              try {
+                await codeInput.fill('');
+                for (let i = 0; i < code.length; i++) {
+                  await codeInput.type(code[i], { delay: 50 });
+                }
+                await page.waitForTimeout(300);
+                const submitBtn = await page.$('button[type="submit"]');
+                if (submitBtn) await submitBtn.click();
+                else await codeInput.press('Enter');
+                console.log(`  Entered verification code`);
+              } catch (err) {
+                console.log(`  Code entry error: ${err.message}`);
               }
-              await page.waitForTimeout(300);
-              const submitBtn = await page.$('button[type="submit"]');
-              if (submitBtn) await submitBtn.click();
-              else await codeInput.press('Enter');
-              console.log(`  Entered verification code`);
               await page.waitForTimeout(3000);
             }
           } else {
@@ -455,20 +577,42 @@ async function addAccount(account, browser, options) {
         }
       }
 
-      const hasCaptcha = await page.$('[data-testid="captcha"], .cf-turnstile, iframe[src*="captcha"], iframe[src*="challenges.cloudflare.com"]');
-      if (hasCaptcha && !headless) {
+      let hasCaptcha;
+      try {
+        hasCaptcha = await page.$('[data-testid="captcha"], .cf-turnstile, iframe[src*="captcha"], iframe[src*="challenges.cloudflare.com"]');
+      } catch {
+        hasCaptcha = null;
+      }
+      if (hasCaptcha && !options.headless) {
         console.log('  CAPTCHA detected — solve manually...');
       }
 
       await page.waitForTimeout(1000);
     }
 
-    const oauthStatus = await getOAuthStatus();
-    if (oauthStatus.status === 'success' || page.url().includes('localhost:1455/auth/callback') || page.url().includes('tightrope://')) {
+    const oauthStatus = await getOAuthStatus().catch(() => ({ status: 'unknown' }));
+    let callbackReceived = oauthStatus.status === 'success';
+    if (!callbackReceived) {
+      try {
+        const currentUrl = page.url();
+        callbackReceived = currentUrl.includes('localhost:1455/auth/callback') || currentUrl.includes('tightrope://');
+      } catch {
+        callbackReceived = true;
+      }
+    }
+    if (callbackReceived || oauthStatus.status === 'success') {
+      console.log('  Checking if account was added...');
       const newAccount = await waitForAccountAdded(existingEmails, 30000);
       if (newAccount) {
         console.log(`  ADDED: ${newAccount.email} (${newAccount.plan_type || 'unknown plan'})`);
         return { email: newAccount.email, status: 'added', plan: newAccount.plan_type };
+      }
+      console.log('  Account may have been added but could not be confirmed, checking list...');
+      const currentAccounts = await listAccounts();
+      const currentEmails = new Set(currentAccounts.map((a) => a.email));
+      if (currentEmails.has(account.email)) {
+        console.log(`  ADDED (confirmed): ${account.email}`);
+        return { email: account.email, status: 'added' };
       }
     }
 

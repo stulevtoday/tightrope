@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import type { TightropeService } from '../../services/tightrope';
 import type { DashboardSettings, DashboardSettingsUpdate } from '../../shared/types';
 import { reportWarn } from '../errors';
@@ -131,13 +132,13 @@ export async function toggleSyncEnabledFlow(deps: ToggleSyncEnabledDeps): Promis
         return;
       }
       await deps.refreshClusterState();
-      deps.pushRuntimeEvent('sync cluster disabled', 'warn');
+      deps.pushRuntimeEvent(i18next.t('status.sync_cluster_disabled'), 'warn');
       return;
     }
 
     const settings = deps.hasUnsavedSettingsChanges ? deps.dashboardSettings : deps.appliedDashboardSettings;
     if (deps.hasUnsavedSettingsChanges) {
-      deps.pushRuntimeEvent('sync toggle is using unsaved settings; click Save to persist these values', 'warn');
+      deps.pushRuntimeEvent(i18next.t('status.sync_toggle_unsaved'), 'warn');
     }
     try {
       const enabled = await deps.clusterEnableRequest(clusterConfigFromSettings(settings));
