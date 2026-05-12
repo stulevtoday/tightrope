@@ -228,6 +228,18 @@ goto setup_finish_env
 
 :setup_finish_env
 echo [build.bat] Using Visual Studio: %VS_INSTALL%
+rem Prevent MSYS2/MinGW compiler paths from taking precedence over Visual Studio and vcpkg.
+set "INCLUDE="
+set "LIB="
+set "LIBPATH="
+set "CPATH="
+set "C_INCLUDE_PATH="
+set "CPLUS_INCLUDE_PATH="
+set "LIBRARY_PATH="
+set "CMAKE_INCLUDE_PATH="
+set "CMAKE_LIBRARY_PATH="
+set "CMAKE_PREFIX_PATH="
+set "PKG_CONFIG_PATH="
 call "%VSCONFIG%" x64
 if errorlevel 1 goto setup_error_vcvars
 
