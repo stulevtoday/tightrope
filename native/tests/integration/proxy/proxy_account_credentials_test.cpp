@@ -15,6 +15,7 @@
 #include "repositories/account_repo.h"
 #include "repositories/request_log_repo.h"
 #include "repositories/settings_repo.h"
+#include "repositories/session_repo.h"
 #include "controllers/proxy_controller.h"
 #include "server/oauth_provider_fake.h"
 #include "server/runtime_test_utils.h"
@@ -195,6 +196,40 @@ std::size_t count_sticky_sessions_for_account(sqlite3* db, const std::string& ac
     }
     sqlite3_stmt* stmt = nullptr;
     constexpr const char* kSql = "SELECT COUNT(1) FROM proxy_sticky_sessions WHERE account_id = ?1;";
+    if (sqlite3_prepare_v2(db, kSql, -1, &stmt, nullptr) != SQLITE_OK || stmt == nullptr) {
+        if (stmt != nullptr) {
+            sqlite3_finalize(stmt);
+        }
+        return 0;
+    }
+    const auto finalize = [&stmt]() {
+        if (stmt != nullptr) {
+            sqlite3_finalize(stmt);
+            stmt = nullptr;
+        }
+    };
+    if (sqlite3_bind_text(stmt, 1, account_id.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK) {
+        finalize();
+        return 0;
+    }
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        finalize();
+        return 0;
+    }
+    const auto count = sqlite3_column_int64(stmt, 0);
+    finalize();
+    if (count <= 0) {
+        return 0;
+    }
+    return static_cast<std::size_t>(count);
+}
+
+std::size_t count_response_continuity_for_account(sqlite3* db, const std::string& account_id) {
+    if (db == nullptr || account_id.empty()) {
+        return 0;
+    }
+    sqlite3_stmt* stmt = nullptr;
+    constexpr const char* kSql = "SELECT COUNT(1) FROM proxy_response_continuity WHERE account_id = ?1;";
     if (sqlite3_prepare_v2(db, kSql, -1, &stmt, nullptr) != SQLITE_OK || stmt == nullptr) {
         if (stmt != nullptr) {
             sqlite3_finalize(stmt);
@@ -1481,7 +1516,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "responses JSON treats upstream_unavailable 500 with quota markers as exhausted and fails over on the next request",
+    "responses JSON treats upstream_unavailable 500 with quota markers as exhausted and fails over in the same request",
     "[proxy][auth][credentials][exhausted][upstream-unavailable]"
 ) {
     const auto seeded = make_oauth_db_with_two_accounts();
@@ -1528,8 +1563,8 @@ TEST_CASE(
     const std::string payload =
         R"({"model":"gpt-5.4","input":"upstream-unavailable-exhaustion-check","prompt_cache_key":"upstream-unavailable-exhaustion-sticky-key"})";
     const auto first = tightrope::server::controllers::post_proxy_responses_json("/v1/responses", payload);
-    REQUIRE(first.status == 500);
-    REQUIRE(call_count == 1);
+    REQUIRE(first.status == 200);
+    REQUIRE(call_count == 2);
 
     {
         sqlite3* db = open_db_readwrite(seeded.db_path);
@@ -1539,9 +1574,173 @@ TEST_CASE(
         sqlite3_close(db);
     }
 
-    const auto second = tightrope::server::controllers::post_proxy_responses_json("/v1/responses", payload);
+    std::filesystem::remove(seeded.db_path);
+}
+
+TEST_CASE(
+    "responses JSON falls back from blocked previous_response continuity without sending an empty token",
+    "[proxy][auth][credentials][exhausted][continuity]"
+) {
+    const auto seeded = make_oauth_db_with_two_accounts();
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        configure_routing_strategy(db, "weighted_round_robin");
+        set_quota_usage(db, seeded.first_internal_id, 10, 10);
+        set_quota_usage(db, seeded.second_internal_id, 5, 5);
+        sqlite3_close(db);
+    }
+
+    tightrope::tests::server::EnvVarGuard db_path_guard{"TIGHTROPE_DB_PATH"};
+    REQUIRE(db_path_guard.set(seeded.db_path));
+
+    std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            observed_plans.push_back(plan);
+            if (observed_plans.size() == 1) {
+                REQUIRE(plan.headers.at("chatgpt-account-id") == "acc-first");
+                REQUIRE(plan.headers.at("Authorization") == "Bearer token-first");
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 200,
+                    .body = R"({"id":"resp_blocked_continuity_seed","object":"response","status":"completed","output":[]})",
+                };
+            }
+
+            REQUIRE(plan.headers.at("chatgpt-account-id") == "acc-second");
+            REQUIRE(plan.headers.at("Authorization") == "Bearer token-second");
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .body = R"({"id":"resp_blocked_continuity_recovered","object":"response","status":"completed","output":[]})",
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const tightrope::proxy::openai::HeaderMap headers = {{"session_id", "blocked-continuity-session"}};
+    const auto first = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":"continuity-seed"})",
+        {{"session_id", "blocked-continuity-session"}, {"chatgpt-account-id", "acc-first"}}
+    );
+    REQUIRE(first.status == 200);
+
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        REQUIRE(count_response_continuity_for_account(db, "acc-first") == 1);
+        set_account_status(db, "acc-first", "quota_blocked");
+        set_quota_usage(db, seeded.first_internal_id, 100, 100);
+        sqlite3_close(db);
+    }
+
+    const auto second = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":"continuity-recover","previous_response_id":"resp_blocked_continuity_seed"})",
+        headers
+    );
     REQUIRE(second.status == 200);
-    REQUIRE(call_count == 2);
+    REQUIRE(observed_plans.size() == 2);
+
+    std::filesystem::remove(seeded.db_path);
+}
+
+TEST_CASE(
+    "responses JSON rejects blocked function_call_output continuity before upstream",
+    "[proxy][auth][credentials][exhausted][continuity]"
+) {
+    const auto seeded = make_oauth_db_with_two_accounts();
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        configure_routing_strategy(db, "weighted_round_robin");
+        set_quota_usage(db, seeded.first_internal_id, 10, 10);
+        set_quota_usage(db, seeded.second_internal_id, 5, 5);
+        sqlite3_close(db);
+    }
+
+    tightrope::tests::server::EnvVarGuard db_path_guard{"TIGHTROPE_DB_PATH"};
+    REQUIRE(db_path_guard.set(seeded.db_path));
+
+    std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            observed_plans.push_back(plan);
+            REQUIRE(plan.headers.at("chatgpt-account-id") == "acc-first");
+            REQUIRE(plan.headers.at("Authorization") == "Bearer token-first");
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .body = R"({"id":"resp_blocked_tool_seed","object":"response","status":"completed","output":[]})",
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const tightrope::proxy::openai::HeaderMap headers = {{"session_id", "blocked-tool-continuity-session"}};
+    const auto first = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":"tool-seed"})",
+        {{"session_id", "blocked-tool-continuity-session"}, {"chatgpt-account-id", "acc-first"}}
+    );
+    REQUIRE(first.status == 200);
+
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        set_account_status(db, "acc-first", "quota_blocked");
+        set_quota_usage(db, seeded.first_internal_id, 100, 100);
+        sqlite3_close(db);
+    }
+
+    const auto second = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":[{"type":"function_call_output","call_id":"call_blocked","output":"ok"}],"previous_response_id":"resp_blocked_tool_seed"})",
+        headers
+    );
+    REQUIRE(second.status == 409);
+    REQUIRE(second.body.find("previous_response_account_unavailable") != std::string::npos);
+    REQUIRE(observed_plans.size() == 1);
+
+    std::filesystem::remove(seeded.db_path);
+}
+
+TEST_CASE(
+    "responses JSON recovers expired rate-limited accounts before routing",
+    "[proxy][auth][credentials][exhausted][reset]"
+) {
+    const auto seeded = make_oauth_db_with_two_accounts();
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        configure_routing_strategy(db, "weighted_round_robin");
+        set_quota_usage_with_reset(db, seeded.first_internal_id, 100, 20, 1, std::nullopt);
+        set_account_status(db, "acc-first", "rate_limited");
+        REQUIRE(tightrope::db::set_account_routing_pinned(db, seeded.first_internal_id, true));
+        set_quota_usage(db, seeded.second_internal_id, 5, 5);
+        sqlite3_close(db);
+    }
+
+    tightrope::tests::server::EnvVarGuard db_path_guard{"TIGHTROPE_DB_PATH"};
+    REQUIRE(db_path_guard.set(seeded.db_path));
+
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            REQUIRE(plan.headers.at("chatgpt-account-id") == "acc-first");
+            REQUIRE(plan.headers.at("Authorization") == "Bearer token-first");
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .body = R"({"id":"resp_recovered_after_reset","object":"response","status":"completed","output":[]})",
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const auto response = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":"reset-recovery-check"})"
+    );
+    REQUIRE(response.status == 200);
+
+    {
+        sqlite3* db = open_db_readwrite(seeded.db_path);
+        REQUIRE(query_account_status(db, "acc-first") == "active");
+        sqlite3_close(db);
+    }
 
     std::filesystem::remove(seeded.db_path);
 }

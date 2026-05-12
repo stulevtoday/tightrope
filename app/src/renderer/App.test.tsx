@@ -16,11 +16,14 @@ describe('App', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: 'Routing pool' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Trace/i }));
+    expect(screen.getByRole('heading', { name: 'Request routing trace' })).toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: /Accounts/i }));
     expect(screen.getByRole('heading', { name: 'Accounts' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Sessions/i }));
-    expect(screen.getByRole('heading', { name: 'Sessions' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Affinity/i }));
+    expect(screen.getByRole('heading', { name: 'Account affinity' })).toBeInTheDocument();
   });
 
   test('hydrates sessions page from runtime sticky sessions', async () => {
@@ -45,7 +48,7 @@ describe('App', () => {
     });
 
     render(<App service={service} />);
-    await user.click(screen.getByRole('button', { name: /Sessions/i }));
+    await user.click(screen.getByRole('button', { name: /Affinity/i }));
 
     expect(await screen.findByTitle('turn_live_runtime')).toBeInTheDocument();
     await waitFor(() => expect(listStickySessions).toHaveBeenCalled());

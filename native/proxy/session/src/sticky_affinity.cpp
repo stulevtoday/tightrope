@@ -114,6 +114,22 @@ WHERE status = 'active'
 LIMIT 1;
 )SQL";
 
+constexpr const char* kFindAccountRecordByChatgptIdSql = R"SQL(
+SELECT 1
+FROM accounts
+WHERE chatgpt_account_id = ?1
+  AND chatgpt_account_id IS NOT NULL
+  AND trim(chatgpt_account_id) != ''
+LIMIT 1;
+)SQL";
+
+constexpr const char* kFindAccountRecordByInternalIdSql = R"SQL(
+SELECT 1
+FROM accounts
+WHERE id = ?1
+LIMIT 1;
+)SQL";
+
 constexpr const char* kFindAnyCredentialSql = R"SQL(
 SELECT id, chatgpt_account_id, access_token_encrypted
 FROM accounts
@@ -422,6 +438,86 @@ std::optional<usage::TokenPricingUsdPerMillion> lookup_plan_model_pricing_overri
 
 std::string normalize_upstream_stream_transport(std::string_view transport);
 
+void recover_expired_account_limit_blocks(sqlite3* db, const std::int64_t captured_now_ms) {
+    if (db == nullptr || captured_now_ms <= 0) {
+        return;
+    }
+
+    constexpr const char* kSql = R"SQL(
+UPDATE accounts
+SET status = 'active',
+    quota_primary_percent = CASE
+        WHEN quota_primary_reset_at_ms IS NOT NULL AND quota_primary_reset_at_ms <= ?1 THEN NULL
+        WHEN status = 'quota_blocked'
+             AND quota_secondary_reset_at_ms IS NOT NULL
+             AND quota_secondary_reset_at_ms <= ?1 THEN NULL
+        ELSE quota_primary_percent
+    END,
+    quota_secondary_percent = CASE
+        WHEN quota_secondary_reset_at_ms IS NOT NULL AND quota_secondary_reset_at_ms <= ?1 THEN NULL
+        WHEN status = 'quota_blocked'
+             AND quota_secondary_reset_at_ms IS NULL
+             AND quota_primary_reset_at_ms IS NOT NULL
+             AND quota_primary_reset_at_ms <= ?1 THEN NULL
+        ELSE quota_secondary_percent
+    END,
+    updated_at = datetime('now')
+WHERE status IN ('rate_limited', 'quota_blocked')
+  AND (
+      (status = 'rate_limited'
+       AND quota_primary_reset_at_ms IS NOT NULL
+       AND quota_primary_reset_at_ms <= ?1)
+      OR
+      (status = 'quota_blocked'
+       AND (
+           (quota_secondary_reset_at_ms IS NOT NULL AND quota_secondary_reset_at_ms <= ?1)
+           OR
+           (quota_secondary_reset_at_ms IS NULL
+            AND quota_primary_reset_at_ms IS NOT NULL
+            AND quota_primary_reset_at_ms <= ?1)
+       ))
+  );
+)SQL";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, kSql, -1, &stmt, nullptr) != SQLITE_OK || stmt == nullptr) {
+        if (stmt != nullptr) {
+            sqlite3_finalize(stmt);
+        }
+        return;
+    }
+    const auto finalize = [&stmt]() {
+        if (stmt != nullptr) {
+            sqlite3_finalize(stmt);
+            stmt = nullptr;
+        }
+    };
+    if (sqlite3_bind_int64(stmt, 1, captured_now_ms) != SQLITE_OK) {
+        finalize();
+        return;
+    }
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        finalize();
+        return;
+    }
+    const auto rows_updated = sqlite3_changes(db);
+    finalize();
+    if (rows_updated > 0) {
+        core::logging::log_event(
+            core::logging::LogLevel::Info,
+            "runtime",
+            "proxy",
+            "account_limit_blocks_recovered",
+            "count=" + std::to_string(rows_updated)
+        );
+        emit_runtime_signal(
+            "info",
+            "account_limit_blocks_recovered",
+            "recovered expired account limit blocks count=" + std::to_string(rows_updated)
+        );
+    }
+}
+
 sqlite3* ensure_db(StickyDbState& state) {
     const auto config = config::load_config();
     const auto desired_path = config.db_path.empty() ? std::string("store.db") : config.db_path;
@@ -697,6 +793,67 @@ std::optional<std::int64_t> parse_positive_int64(std::string_view value) {
         return std::nullopt;
     }
     return parsed;
+}
+
+bool account_record_exists_by_chatgpt_id(sqlite3* db, const std::string_view account_id) {
+    if (db == nullptr || account_id.empty()) {
+        return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, kFindAccountRecordByChatgptIdSql, -1, &stmt, nullptr) != SQLITE_OK ||
+        stmt == nullptr) {
+        if (stmt != nullptr) {
+            sqlite3_finalize(stmt);
+        }
+        return false;
+    }
+    const auto finalize = [&stmt]() {
+        if (stmt != nullptr) {
+            sqlite3_finalize(stmt);
+            stmt = nullptr;
+        }
+    };
+
+    const auto normalized = std::string(account_id);
+    if (sqlite3_bind_text(stmt, 1, normalized.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK) {
+        finalize();
+        return false;
+    }
+
+    const bool exists = sqlite3_step(stmt) == SQLITE_ROW;
+    finalize();
+    return exists;
+}
+
+bool account_record_exists_by_internal_id(sqlite3* db, const std::int64_t account_id) {
+    if (db == nullptr || account_id <= 0) {
+        return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, kFindAccountRecordByInternalIdSql, -1, &stmt, nullptr) != SQLITE_OK ||
+        stmt == nullptr) {
+        if (stmt != nullptr) {
+            sqlite3_finalize(stmt);
+        }
+        return false;
+    }
+    const auto finalize = [&stmt]() {
+        if (stmt != nullptr) {
+            sqlite3_finalize(stmt);
+            stmt = nullptr;
+        }
+    };
+
+    if (sqlite3_bind_int64(stmt, 1, account_id) != SQLITE_OK) {
+        finalize();
+        return false;
+    }
+
+    const bool exists = sqlite3_step(stmt) == SQLITE_ROW;
+    finalize();
+    return exists;
 }
 
 std::optional<UpstreamAccountCredentials> query_exact_account_credentials(
@@ -1471,6 +1628,7 @@ std::optional<UpstreamAccountCredentials> resolve_upstream_account_credentials(
     if (db == nullptr || !db::ensure_accounts_schema(db)) {
         return std::nullopt;
     }
+    recover_expired_account_limit_blocks(db, now_ms());
     const auto settings = db::get_dashboard_settings(db).value_or(db::DashboardSettingsRecord{});
     const bool enforce_strict_preferred = strict_preferred_only;
     const auto locked_account_ids = parse_locked_routing_account_ids(settings.locked_routing_account_ids);
@@ -1702,6 +1860,35 @@ std::optional<UpstreamAccountCredentials> refresh_upstream_account_credentials(c
     return query_exact_account_credentials(db, account_id);
 }
 
+bool upstream_account_record_exists(const std::string_view account_id) {
+    const auto normalized_id = std::string(core::text::trim_ascii(account_id));
+    if (normalized_id.empty()) {
+        return false;
+    }
+    const auto config = config::load_config();
+    const auto db_path = config.db_path.empty() ? std::string("store.db") : config.db_path;
+    db::SqlitePool pool(db_path);
+    if (!pool.open()) {
+        return false;
+    }
+    sqlite3* db = pool.connection();
+    if (db == nullptr || !db::ensure_accounts_schema(db)) {
+        return false;
+    }
+
+    if (account_record_exists_by_chatgpt_id(db, normalized_id)) {
+        pool.close();
+        return true;
+    }
+    if (const auto internal_id = parse_positive_int64(normalized_id); internal_id.has_value()) {
+        const bool exists = account_record_exists_by_internal_id(db, *internal_id);
+        pool.close();
+        return exists;
+    }
+    pool.close();
+    return false;
+}
+
 bool mark_upstream_account_unusable(const std::string_view account_id) {
     const auto normalized_id = std::string(core::text::trim_ascii(account_id));
     if (normalized_id.empty()) {
@@ -1716,12 +1903,13 @@ bool mark_upstream_account_unusable(const std::string_view account_id) {
     }
 
     const auto purged_count = db::purge_proxy_sticky_sessions_for_account(db, normalized_id);
+    const auto purged_continuity_count = db::purge_proxy_response_continuity_for_account(db, normalized_id);
     const bool marked_unusable = mark_account_unusable_by_chatgpt_id(db, normalized_id);
     const bool unpinned = db::clear_account_routing_pin_by_chatgpt_account_id(db, normalized_id);
     if (state.drain_hop_account_id == normalized_id) {
         state.drain_hop_account_id.clear();
     }
-    const bool changed = marked_unusable || unpinned || purged_count > 0;
+    const bool changed = marked_unusable || unpinned || purged_count > 0 || purged_continuity_count > 0;
     if (changed) {
         emit_runtime_signal(
             "error",
@@ -1748,12 +1936,13 @@ bool mark_upstream_account_exhausted(const std::string_view account_id, const st
     }
 
     const auto purged_count = db::purge_proxy_sticky_sessions_for_account(db, normalized_id);
+    const auto purged_continuity_count = db::purge_proxy_response_continuity_for_account(db, normalized_id);
     const bool marked_exhausted = mark_account_exhausted_by_chatgpt_id(db, normalized_id, status);
     const bool unpinned = db::clear_account_routing_pin_by_chatgpt_account_id(db, normalized_id);
     if (state.drain_hop_account_id == normalized_id) {
         state.drain_hop_account_id.clear();
     }
-    const bool changed = marked_exhausted || unpinned || purged_count > 0;
+    const bool changed = marked_exhausted || unpinned || purged_count > 0 || purged_continuity_count > 0;
     if (changed) {
         emit_runtime_signal(
             "warn",

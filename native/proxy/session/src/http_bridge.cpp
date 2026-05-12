@@ -1,11 +1,13 @@
 #include "session/http_bridge.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_generators.hpp>
@@ -25,9 +27,13 @@ namespace {
 
 using Json = glz::generic;
 using JsonObject = Json::object_t;
+using JsonArray = Json::array_t;
 
 constexpr std::int64_t kBridgeTtlMs = 30 * 60 * 1000;
 constexpr std::int64_t kPersistenceCleanupIntervalMs = 60 * 1000;
+constexpr std::size_t kMaxRecoveryInputItems = 16;
+constexpr std::size_t kMaxRecoveryInputBytes = 96 * 1024;
+constexpr std::size_t kMaxRecoveryTextBytes = 16 * 1024;
 struct BridgePersistenceState {
     std::string db_path;
     std::unique_ptr<db::SqlitePool> pool;
@@ -239,6 +245,308 @@ bool object_contains_function_call_output(const JsonObject& object) {
     return false;
 }
 
+std::optional<std::string> json_string_field(const JsonObject& object, const std::string_view key) {
+    const auto it = object.find(std::string(key));
+    if (it == object.end() || !it->second.is_string()) {
+        return std::nullopt;
+    }
+    return std::string(it->second.get_string());
+}
+
+bool object_has_nonempty_tools(const JsonObject& object) {
+    const auto tools_it = object.find("tools");
+    return tools_it != object.end() && tools_it->second.is_array() && !tools_it->second.get_array().empty();
+}
+
+std::string bounded_text(std::string value) {
+    if (value.size() <= kMaxRecoveryTextBytes) {
+        return value;
+    }
+    value.resize(kMaxRecoveryTextBytes);
+    return value;
+}
+
+Json text_part(const std::string_view type, std::string text) {
+    Json part = JsonObject{};
+    part["type"] = std::string(type);
+    part["text"] = bounded_text(std::move(text));
+    return part;
+}
+
+Json user_text_item(std::string text) {
+    Json content = JsonArray{};
+    content.get_array().push_back(text_part("input_text", std::move(text)));
+
+    Json item = JsonObject{};
+    item["role"] = "user";
+    item["content"] = std::move(content);
+    return item;
+}
+
+std::optional<JsonArray> request_input_items_for_recovery(const JsonObject& object) {
+    if (object_has_nonempty_tools(object) || object_contains_function_call_output(object)) {
+        return std::nullopt;
+    }
+
+    const auto input_it = object.find("input");
+    if (input_it == object.end()) {
+        return std::nullopt;
+    }
+    if (input_it->second.is_string()) {
+        JsonArray items;
+        items.push_back(user_text_item(std::string(input_it->second.get_string())));
+        return items;
+    }
+    if (!input_it->second.is_array()) {
+        return std::nullopt;
+    }
+
+    JsonArray items;
+    for (const auto& item : input_it->second.get_array()) {
+        if (is_function_call_output_item(item)) {
+            return std::nullopt;
+        }
+        items.push_back(item);
+    }
+    return items;
+}
+
+bool request_input_looks_contextual(const JsonObject& object) {
+    const auto input_it = object.find("input");
+    if (input_it == object.end() || !input_it->second.is_array()) {
+        return false;
+    }
+    const auto& items = input_it->second.get_array();
+    if (items.size() > 1) {
+        return true;
+    }
+    if (items.empty() || !items.front().is_object()) {
+        return false;
+    }
+    const auto role = json_string_field(items.front().get_object(), "role");
+    return role.has_value() && *role != "user";
+}
+
+std::optional<JsonArray> recovery_items_from_json(std::string_view raw_json) {
+    if (raw_json.empty()) {
+        return std::nullopt;
+    }
+    Json parsed;
+    if (const auto ec = glz::read_json(parsed, raw_json); ec || !parsed.is_array()) {
+        return std::nullopt;
+    }
+    return parsed.get_array();
+}
+
+std::optional<std::string> serialize_recovery_items(const JsonArray& items) {
+    Json payload = items;
+    const auto serialized = glz::write_json(payload);
+    if (!serialized) {
+        return std::nullopt;
+    }
+    return serialized.value_or("[]");
+}
+
+void trim_recovery_items(JsonArray& items) {
+    while (items.size() > kMaxRecoveryInputItems) {
+        items.erase(items.begin());
+    }
+
+    while (!items.empty()) {
+        const auto serialized = serialize_recovery_items(items);
+        if (!serialized.has_value() || serialized->size() <= kMaxRecoveryInputBytes) {
+            return;
+        }
+        items.erase(items.begin());
+    }
+}
+
+void append_items(JsonArray& target, const JsonArray& source) {
+    for (const auto& item : source) {
+        target.push_back(item);
+    }
+}
+
+std::optional<Json> assistant_item_from_response_object(const JsonObject& response) {
+    const auto output_it = response.find("output");
+    if (output_it == response.end() || !output_it->second.is_array()) {
+        return std::nullopt;
+    }
+
+    Json content = JsonArray{};
+    auto& content_items = content.get_array();
+    for (const auto& output_item : output_it->second.get_array()) {
+        if (!output_item.is_object()) {
+            continue;
+        }
+        const auto& output_object = output_item.get_object();
+        const auto output_type = json_string_field(output_object, "type");
+        if (output_type.has_value() && *output_type != "message" && *output_type != "output_text") {
+            continue;
+        }
+
+        if (const auto text = json_string_field(output_object, "text"); text.has_value() && !text->empty()) {
+            content_items.push_back(text_part("output_text", *text));
+        }
+
+        const auto output_content_it = output_object.find("content");
+        if (output_content_it == output_object.end()) {
+            continue;
+        }
+        if (output_content_it->second.is_string()) {
+            content_items.push_back(text_part("output_text", std::string(output_content_it->second.get_string())));
+            continue;
+        }
+        if (!output_content_it->second.is_array()) {
+            continue;
+        }
+        for (const auto& part : output_content_it->second.get_array()) {
+            if (!part.is_object()) {
+                continue;
+            }
+            const auto& part_object = part.get_object();
+            const auto part_type = json_string_field(part_object, "type");
+            if (part_type.has_value() && *part_type != "output_text" && *part_type != "text" &&
+                *part_type != "refusal") {
+                continue;
+            }
+            if (const auto text = json_string_field(part_object, "text"); text.has_value() && !text->empty()) {
+                content_items.push_back(text_part("output_text", *text));
+            } else if (const auto refusal = json_string_field(part_object, "refusal");
+                       refusal.has_value() && !refusal->empty()) {
+                content_items.push_back(text_part("output_text", *refusal));
+            }
+        }
+    }
+
+    if (content_items.empty()) {
+        return std::nullopt;
+    }
+
+    Json item = JsonObject{};
+    item["role"] = "assistant";
+    item["content"] = std::move(content);
+    return item;
+}
+
+std::optional<Json> assistant_item_from_json_body(const std::string& response_body) {
+    Json payload;
+    if (const auto ec = glz::read_json(payload, response_body); ec || !payload.is_object()) {
+        return std::nullopt;
+    }
+    const auto& object = payload.get_object();
+    if (const auto item = assistant_item_from_response_object(object); item.has_value()) {
+        return item;
+    }
+
+    const auto response_it = object.find("response");
+    if (response_it != object.end() && response_it->second.is_object()) {
+        return assistant_item_from_response_object(response_it->second.get_object());
+    }
+    return std::nullopt;
+}
+
+std::optional<Json> assistant_item_from_events(const std::vector<std::string>& events) {
+    std::optional<Json> fallback;
+    for (const auto& event : events) {
+        Json payload;
+        if (const auto ec = glz::read_json(payload, event); ec || !payload.is_object()) {
+            continue;
+        }
+
+        const auto& object = payload.get_object();
+        const auto type = json_string_field(object, "type");
+        if (!type.has_value()) {
+            continue;
+        }
+        if (*type != "response.completed" && *type != "response.incomplete" && *type != "response.created") {
+            continue;
+        }
+        const auto response_it = object.find("response");
+        if (response_it == object.end() || !response_it->second.is_object()) {
+            continue;
+        }
+
+        auto item = assistant_item_from_response_object(response_it->second.get_object());
+        if (!item.has_value()) {
+            continue;
+        }
+        if (*type == "response.completed" || *type == "response.incomplete") {
+            return item;
+        }
+        fallback = std::move(item);
+    }
+    return fallback;
+}
+
+std::optional<db::ProxyResponseContinuityRecord>
+find_response_context_record(const std::string& previous_response_id, const openai::HeaderMap& headers) {
+    const auto key = continuity_key_from_headers(headers);
+    if (!key.has_value() || key->empty()) {
+        return std::nullopt;
+    }
+
+    const auto api_key_scope = api_key_scope_from_headers(headers);
+    std::lock_guard<std::mutex> lock(http_bridge_mutex());
+    auto& persistence = bridge_persistence_state();
+    const auto now = now_ms();
+    if (sqlite3* db = ensure_persistence_db(persistence); db != nullptr) {
+        auto record = db::find_proxy_response_continuity_by_response_id(db, previous_response_id, api_key_scope, now);
+        maybe_purge_expired_persistence_rows(persistence, db, now);
+        if (record.has_value() && record->continuity_key == *key) {
+            return record;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> build_recovery_input_json(
+    const std::string& request_body,
+    const openai::HeaderMap& headers,
+    const std::optional<Json>& assistant_item
+) {
+    Json payload;
+    if (const auto ec = glz::read_json(payload, request_body); ec || !payload.is_object()) {
+        return std::nullopt;
+    }
+    const auto& object = payload.get_object();
+    auto current_input = request_input_items_for_recovery(object);
+    if (!current_input.has_value()) {
+        return std::nullopt;
+    }
+
+    JsonArray recovered_items;
+    if (const auto previous_response_id = parse_previous_response_id(request_body); previous_response_id.has_value()) {
+        if (const auto record = find_response_context_record(*previous_response_id, headers); record.has_value()) {
+            if (auto previous_items = recovery_items_from_json(record->recovery_input_json); previous_items.has_value()) {
+                recovered_items = std::move(*previous_items);
+            }
+        }
+    }
+
+    append_items(recovered_items, *current_input);
+    if (assistant_item.has_value()) {
+        recovered_items.push_back(*assistant_item);
+    }
+    trim_recovery_items(recovered_items);
+    return serialize_recovery_items(recovered_items);
+}
+
+std::optional<std::string> rebuild_request_body_with_recovery_items(
+    const std::string& raw_request_body,
+    const JsonArray& recovery_items
+) {
+    Json payload;
+    if (const auto ec = glz::read_json(payload, raw_request_body); ec || !payload.is_object()) {
+        return std::nullopt;
+    }
+    auto object = payload.get_object();
+    object.erase("previous_response_id");
+    Json input = recovery_items;
+    object["input"] = std::move(input);
+    return serialize_json(object);
+}
+
 std::optional<std::string> response_id_from_json_body(const std::string& response_body) {
     Json payload;
     if (const auto ec = glz::read_json(payload, response_body); ec || !payload.is_object()) {
@@ -317,7 +625,8 @@ std::string generate_turn_state() {
 void remember_response_id(
     const openai::HeaderMap& headers,
     const std::optional<std::string>& response_id,
-    std::string_view resolved_account_id
+    std::string_view resolved_account_id,
+    const std::string_view recovery_input_json = {}
 ) {
     if (!response_id.has_value() || response_id->empty()) {
         return;
@@ -349,7 +658,8 @@ void remember_response_id(
             *response_id,
             account_id,
             now,
-            kBridgeTtlMs
+            kBridgeTtlMs,
+            recovery_input_json
         );
         maybe_purge_expired_persistence_rows(persistence, db, now);
     }
@@ -528,6 +838,45 @@ bool request_has_previous_response_id(const std::string& raw_request_body) {
     return parse_previous_response_id(raw_request_body).has_value();
 }
 
+std::optional<std::string>
+rebuild_request_body_with_local_context(const std::string& raw_request_body, const openai::HeaderMap& headers) {
+    if (request_contains_function_call_output(raw_request_body)) {
+        return std::nullopt;
+    }
+
+    const auto previous_response_id = parse_previous_response_id(raw_request_body);
+    if (!previous_response_id.has_value()) {
+        return std::nullopt;
+    }
+
+    Json payload;
+    if (const auto ec = glz::read_json(payload, raw_request_body); ec || !payload.is_object()) {
+        return std::nullopt;
+    }
+    const auto& object = payload.get_object();
+    auto current_input = request_input_items_for_recovery(object);
+    if (!current_input.has_value()) {
+        return std::nullopt;
+    }
+
+    if (request_input_looks_contextual(object)) {
+        return strip_previous_response_id(raw_request_body);
+    }
+
+    const auto record = find_response_context_record(*previous_response_id, headers);
+    if (!record.has_value()) {
+        return std::nullopt;
+    }
+    auto recovery_items = recovery_items_from_json(record->recovery_input_json);
+    if (!recovery_items.has_value() || recovery_items->empty()) {
+        return std::nullopt;
+    }
+
+    append_items(*recovery_items, *current_input);
+    trim_recovery_items(*recovery_items);
+    return rebuild_request_body_with_recovery_items(raw_request_body, *recovery_items);
+}
+
 void remember_response_id_from_json(
     const openai::HeaderMap& headers,
     const std::string& response_body,
@@ -536,12 +885,43 @@ void remember_response_id_from_json(
     remember_response_id(headers, response_id_from_json_body(response_body), account_id);
 }
 
+void remember_response_id_from_json(
+    const openai::HeaderMap& headers,
+    const std::string& request_body,
+    const std::string& response_body,
+    const std::string_view account_id
+) {
+    const auto recovery_input_json =
+        build_recovery_input_json(request_body, headers, assistant_item_from_json_body(response_body));
+    remember_response_id(
+        headers,
+        response_id_from_json_body(response_body),
+        account_id,
+        recovery_input_json.value_or(std::string{})
+    );
+}
+
 void remember_response_id_from_events(
     const openai::HeaderMap& headers,
     const std::vector<std::string>& events,
     const std::string_view account_id
 ) {
     remember_response_id(headers, response_id_from_events(events), account_id);
+}
+
+void remember_response_id_from_events(
+    const openai::HeaderMap& headers,
+    const std::string& request_body,
+    const std::vector<std::string>& events,
+    const std::string_view account_id
+) {
+    const auto recovery_input_json = build_recovery_input_json(request_body, headers, assistant_item_from_events(events));
+    remember_response_id(
+        headers,
+        response_id_from_events(events),
+        account_id,
+        recovery_input_json.value_or(std::string{})
+    );
 }
 
 void reset_response_bridge_for_tests() {

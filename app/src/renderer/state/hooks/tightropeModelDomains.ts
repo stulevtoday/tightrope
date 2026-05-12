@@ -171,6 +171,7 @@ export function useTightropeModelDomains(input: UseTightropeModelDomainsInput): 
       mapRuntimeStickySession: mapRuntimeStickySessionToUiSession,
       clampSessionsOffset,
       listStickySessionsRequest: input.service.listStickySessionsRequest,
+      purgeStaleSessionsRequest: input.service.purgeStaleSessionsRequest,
       pushRuntimeEvent: input.pushRuntimeEvent,
     }),
   );
@@ -303,6 +304,12 @@ export function useTightropeModelDomains(input: UseTightropeModelDomainsInput): 
           input.pushRuntimeEvent(`route switched ${previousName} -> ${nextName}`, 'success');
         }
         routedAccountRef.current = nextRoutedAccountId;
+        input.setState((previous) => {
+          if (previous.currentRoutedAccountId === nextRoutedAccountId) {
+            return previous;
+          }
+          return { ...previous, currentRoutedAccountId: nextRoutedAccountId };
+        });
         return;
       }
 

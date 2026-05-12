@@ -34,6 +34,7 @@ std::optional<UpstreamAccountCredentials> resolve_upstream_account_credentials(
 );
 std::string resolve_upstream_stream_transport_setting();
 std::optional<UpstreamAccountCredentials> refresh_upstream_account_credentials(std::string_view account_id);
+bool upstream_account_record_exists(std::string_view account_id);
 bool mark_upstream_account_unusable(std::string_view account_id);
 bool mark_upstream_account_exhausted(std::string_view account_id, std::string_view status);
 bool account_is_in_active_lock_pool(std::string_view account_id);

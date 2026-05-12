@@ -1,21 +1,27 @@
-import i18next from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { useAccountsContext, useNavigationContext, useSessionsContext } from '../../state/context';
+import { useAccountsContext, useNavigationContext, useSessionsContext, useSettingsContext } from '../../state/context';
 import type { StickySession } from '../../shared/types';
-
-const KIND_LABELS: Record<StickySession['kind'], string> = {
-  codex_session: i18next.t('sessions.kind_codex_session'),
-  sticky_thread: i18next.t('sessions.kind_sticky_thread'),
-  prompt_cache: i18next.t('sessions.kind_prompt_cache'),
-};
 
 export function SessionsPage() {
   const { t } = useTranslation();
   const navigation = useNavigationContext();
   const accounts = useAccountsContext();
   const sessions = useSessionsContext();
+  const settings = useSettingsContext();
 
   if (navigation.currentPage !== 'sessions') return null;
+
+  const stickyThreadsEnabled = settings.dashboardSettings.stickyThreadsEnabled;
+  const emptyMessage = !stickyThreadsEnabled
+    ? t('sessions.no_sticky_routing')
+    : sessions.sessionsKindFilter === 'all'
+      ? t('sessions.no_active')
+      : t('sessions.no_matching');
+  const kindLabels: Record<StickySession['kind'], string> = {
+    codex_session: t('sessions.kind_codex_session'),
+    sticky_thread: t('sessions.kind_sticky_thread'),
+    prompt_cache: t('sessions.kind_prompt_cache'),
+  };
 
   return (
     <section className="sessions-page page active" id="pageSessions" data-page="sessions">
@@ -25,18 +31,28 @@ export function SessionsPage() {
             <p className="eyebrow">{t('sessions.eyebrow')}</p>
             <h2>{t('sessions.title')}</h2>
           </div>
-          <button className="dock-btn accent" id="purgeStaleSessions" type="button" onClick={sessions.purgeStaleSessions}>
+          <button
+            className="dock-btn accent"
+            id="purgeStaleSessions"
+            type="button"
+            disabled={sessions.sessionsView.staleTotal === 0}
+            onClick={sessions.purgeStaleSessions}
+          >
             {t('sessions.purge_stale')}
           </button>
         </header>
         <div className="sessions-stats">
           <span>
-            <span className="stat-label">{t('sessions.visible_rows')}</span>
+            <span className="stat-label">{t('sessions.active_mappings')}</span>
             <strong>{sessions.sessionsView.filtered.length}</strong>
           </span>
           <span>
-            <span className="stat-label">{t('sessions.stale_prompt_cache')}</span>
+            <span className="stat-label">{t('sessions.stale_mappings')}</span>
             <strong>{sessions.sessionsView.staleTotal}</strong>
+          </span>
+          <span>
+            <span className="stat-label">{t('sessions.sticky_routing')}</span>
+            <strong>{stickyThreadsEnabled ? t('sessions.sticky_routing_on') : t('sessions.sticky_routing_off')}</strong>
           </span>
         </div>
         <div className="sessions-filter">
@@ -77,14 +93,13 @@ export function SessionsPage() {
                 <th>{t('sessions.col_account')}</th>
                 <th>{t('sessions.col_updated')}</th>
                 <th>{t('sessions.col_expiry')}</th>
-                <th />
               </tr>
             </thead>
             <tbody>
               {sessions.sessionsView.paged.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="empty-state">
-                    {t('sessions.no_matching')}
+                  <td colSpan={5} className="empty-state">
+                    {emptyMessage}
                   </td>
                 </tr>
               ) : (
@@ -100,7 +115,7 @@ export function SessionsPage() {
                         {session.key}
                       </td>
                       <td>
-                        <span className={`kind-badge ${session.kind.replace('_', '-')}`}>{KIND_LABELS[session.kind]}</span>
+                        <span className={`kind-badge ${session.kind.replace('_', '-')}`}>{kindLabels[session.kind]}</span>
                       </td>
                       <td style={{ fontSize: '12px' }}>{accountName}</td>
                       <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{session.updated}</td>
@@ -115,11 +130,6 @@ export function SessionsPage() {
                         ) : (
                           <span className="durable-label">{t('sessions.durable_label')}</span>
                         )}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <button className="btn-danger" style={{ fontSize: '11px', padding: '0.15rem 0.4rem' }} type="button">
-                          {t('sessions.remove')}
-                        </button>
                       </td>
                     </tr>
                   );

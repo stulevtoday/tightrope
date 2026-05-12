@@ -25,6 +25,7 @@ struct ProxyResponseContinuityRecord {
     std::string api_key_scope;
     std::string response_id;
     std::string account_id;
+    std::string recovery_input_json;
     std::int64_t updated_at_ms = 0;
     std::int64_t expires_at_ms = 0;
 };
@@ -53,11 +54,18 @@ list_proxy_sticky_sessions(sqlite3* db, std::size_t limit = 500, std::size_t off
     std::string_view response_id,
     std::string_view account_id,
     std::int64_t now_ms,
-    std::int64_t ttl_ms
+    std::int64_t ttl_ms,
+    std::string_view recovery_input_json = {}
 ) noexcept;
 [[nodiscard]] std::optional<ProxyResponseContinuityRecord> find_proxy_response_continuity(
     sqlite3* db,
     std::string_view continuity_key,
+    std::string_view api_key_scope,
+    std::int64_t now_ms
+) noexcept;
+[[nodiscard]] std::optional<ProxyResponseContinuityRecord> find_proxy_response_continuity_by_response_id(
+    sqlite3* db,
+    std::string_view response_id,
     std::string_view api_key_scope,
     std::int64_t now_ms
 ) noexcept;
@@ -68,5 +76,6 @@ list_proxy_sticky_sessions(sqlite3* db, std::size_t limit = 500, std::size_t off
     std::int64_t now_ms
 ) noexcept;
 [[nodiscard]] std::size_t purge_expired_proxy_response_continuity(sqlite3* db, std::int64_t now_ms) noexcept;
+[[nodiscard]] std::size_t purge_proxy_response_continuity_for_account(sqlite3* db, std::string_view account_id) noexcept;
 
 } // namespace tightrope::db

@@ -63,3 +63,41 @@ TEST_CASE("sessions controller lists sticky sessions from persistence", "[server
     sqlite3_close(db);
     std::filesystem::remove(db_path);
 }
+
+TEST_CASE("sessions controller purges stale sticky sessions", "[server][sessions]") {
+    const auto db_path = make_temp_db_path();
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open_v2(db_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
+    REQUIRE(db != nullptr);
+
+    REQUIRE(tightrope::db::ensure_proxy_sticky_session_schema(db));
+    REQUIRE(tightrope::db::upsert_proxy_sticky_session(
+        db,
+        "expired_turn",
+        "acc-1",
+        /*now_ms=*/1000,
+        /*ttl_ms=*/1,
+        "codex_session"
+    ));
+    REQUIRE(tightrope::db::upsert_proxy_sticky_session(
+        db,
+        "future_turn",
+        "acc-2",
+        /*now_ms=*/9'000'000'000'000,
+        /*ttl_ms=*/60'000,
+        "codex_session"
+    ));
+
+    const auto response = tightrope::server::controllers::purge_stale_sticky_sessions(db);
+    REQUIRE(response.status == 200);
+    REQUIRE(response.generated_at_ms > 0);
+    REQUIRE(response.purged == 1);
+
+    const auto remaining = tightrope::server::controllers::list_sticky_sessions(10, 0, db);
+    REQUIRE(remaining.status == 200);
+    REQUIRE(remaining.sessions.size() == 1);
+    REQUIRE(remaining.sessions[0].session_key == "future_turn");
+
+    sqlite3_close(db);
+    std::filesystem::remove(db_path);
+}

@@ -377,12 +377,12 @@ bool handle_exhausted_account_if_present(const UpstreamExecutionResult& upstream
 }
 
 bool should_retry_previous_response_not_found(
-    const bool backend_codex_route,
+    const bool,
     const bool continuation_request,
     const bool contains_function_call_output,
     const UpstreamExecutionResult& upstream
 ) {
-    if (!backend_codex_route || !continuation_request || contains_function_call_output) {
+    if (!continuation_request || contains_function_call_output) {
         return false;
     }
     return internal::resolved_upstream_error_code(upstream) == "previous_response_not_found";
@@ -398,6 +398,60 @@ bool should_retry_previous_response_with_bridge_rewrite(
         return false;
     }
     return internal::resolved_upstream_error_code(upstream) == "previous_response_not_found";
+}
+
+std::optional<std::string> fallback_body_without_previous_response(
+    const std::string& request_body,
+    const bool continuation_request,
+    const bool contains_function_call_output
+) {
+    if (!continuation_request) {
+        return request_body;
+    }
+    if (contains_function_call_output) {
+        return std::nullopt;
+    }
+    if (const auto stripped = session::strip_previous_response_id(request_body); stripped.has_value()) {
+        return *stripped;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> fallback_body_with_local_context(
+    const std::string& request_body,
+    const openai::HeaderMap& headers,
+    const bool continuation_request,
+    const bool contains_function_call_output
+) {
+    if (!continuation_request) {
+        return request_body;
+    }
+    if (contains_function_call_output) {
+        return std::nullopt;
+    }
+    if (const auto recovered = session::rebuild_request_body_with_local_context(request_body, headers);
+        recovered.has_value()) {
+        return recovered;
+    }
+    return fallback_body_without_previous_response(request_body, continuation_request, contains_function_call_output);
+}
+
+bool apply_resolved_credentials(
+    const std::optional<session::UpstreamAccountCredentials>& credentials,
+    session::StickyAffinityResolution& resolved_affinity,
+    std::string& access_token,
+    std::string& traffic_account_id
+) {
+    if (!credentials.has_value()) {
+        return false;
+    }
+    resolved_affinity.account_id = credentials->account_id;
+    access_token = credentials->access_token;
+    traffic_account_id.clear();
+    if (credentials->internal_account_id > 0) {
+        traffic_account_id = std::to_string(credentials->internal_account_id);
+    }
+    return true;
 }
 
 std::string default_error_type_for_code(const std::string_view code) {
@@ -462,9 +516,9 @@ ProxyJsonResult collect_responses_json(
     const auto affinity = session::resolve_sticky_affinity(raw_request_body, bridged_headers);
     const auto continuation_guard =
         internal::guard_backend_codex_previous_response(route, raw_request_body, bridged_headers, affinity);
-    const auto& request_body = continuation_guard.request_body;
-    const bool continuation_request = continuation_guard.continuation_request;
-    const bool continuation_contains_function_call_output = continuation_guard.contains_function_call_output;
+    std::string request_body = continuation_guard.request_body;
+    bool continuation_request = continuation_guard.continuation_request;
+    bool continuation_contains_function_call_output = continuation_guard.contains_function_call_output;
     bool sticky_reused = affinity.from_persistence;
     const auto& preferred_account_id = continuation_guard.preferred_account_id;
     const auto& continuity_account_id = continuation_guard.continuity_account_id;
@@ -485,18 +539,59 @@ ProxyJsonResult collect_responses_json(
         credential_preference = affinity.account_id;
     }
     const bool strict_preferred = continuation_request && !credential_preference.empty();
+    const auto strict_credential_preference = credential_preference;
+    const bool strict_preferred_account_known =
+        strict_preferred && session::upstream_account_record_exists(strict_credential_preference);
 
-    if (const auto credentials = session::resolve_upstream_account_credentials(
-            credential_preference,
-            affinity.request_model,
-            strict_preferred
-        );
-        credentials.has_value()) {
-        resolved_affinity.account_id = credentials->account_id;
-        access_token = credentials->access_token;
-        if (credentials->internal_account_id > 0) {
-            traffic_account_id = std::to_string(credentials->internal_account_id);
+    if (!apply_resolved_credentials(
+            session::resolve_upstream_account_credentials(credential_preference, affinity.request_model, strict_preferred),
+            resolved_affinity,
+            access_token,
+            traffic_account_id
+        ) &&
+        strict_preferred) {
+        const auto stripped =
+            affinity.from_header
+                ? std::optional<std::string>{}
+                : fallback_body_with_local_context(
+                      request_body,
+                      bridged_headers,
+                      continuation_request,
+                      continuation_contains_function_call_output
+                  );
+        if (stripped.has_value()) {
+            request_body = *stripped;
+            continuation_request = false;
+            continuation_contains_function_call_output = false;
+            credential_preference.clear();
+            resolved_affinity = affinity;
+            (void)apply_resolved_credentials(
+                session::resolve_upstream_account_credentials("", affinity.request_model, false),
+                resolved_affinity,
+                access_token,
+                traffic_account_id
+            );
+            sticky_reused = affinity.from_persistence;
         }
+    }
+    if (strict_preferred_account_known && access_token.empty()) {
+        core::logging::log_event(
+            core::logging::LogLevel::Warning,
+            "runtime",
+            "proxy",
+            "responses_previous_response_account_unavailable",
+            "route=" + std::string(route) + " account_id=" + strict_credential_preference
+        );
+        return {
+            .status = 409,
+            .body = openai::build_error_envelope(
+                "previous_response_account_unavailable",
+                "Previous response account is unavailable",
+                "invalid_request_error",
+                "previous_response_id"
+            ),
+            .sticky_reused = sticky_reused,
+        };
     }
     openai::UpstreamRequestPlan plan;
     try {
@@ -622,7 +717,13 @@ ProxyJsonResult collect_responses_json(
             continuation_contains_function_call_output,
             upstream
         )) {
-        if (const auto stripped = session::strip_previous_response_id(request_body); stripped.has_value()) {
+        if (const auto stripped = fallback_body_with_local_context(
+                request_body,
+                bridged_headers,
+                continuation_request,
+                continuation_contains_function_call_output
+            );
+            stripped.has_value()) {
             core::logging::log_event(
                 core::logging::LogLevel::Info,
                 "runtime",
@@ -638,6 +739,10 @@ ProxyJsonResult collect_responses_json(
                     resolved_affinity.account_id,
                     ""
                 );
+                request_body = *stripped;
+                continuation_request = session::request_has_previous_response_id(request_body);
+                continuation_contains_function_call_output =
+                    continuation_request && session::request_contains_function_call_output(request_body);
                 upstream = execute_upstream(plan);
             } catch (const std::exception&) {
                 core::logging::log_event(
@@ -649,7 +754,61 @@ ProxyJsonResult collect_responses_json(
             }
         }
     }
-    (void)handle_exhausted_account_if_present(upstream, resolved_affinity.account_id);
+    const bool marked_exhausted = handle_exhausted_account_if_present(upstream, resolved_affinity.account_id);
+    if (marked_exhausted && !affinity.from_header) {
+        if (const auto failover_body =
+                fallback_body_with_local_context(
+                    request_body,
+                    bridged_headers,
+                    continuation_request,
+                    continuation_contains_function_call_output
+                );
+            failover_body.has_value()) {
+            session::StickyAffinityResolution failover_affinity = affinity;
+            std::string failover_access_token;
+            std::string failover_traffic_account_id;
+            if (apply_resolved_credentials(
+                    session::resolve_upstream_account_credentials("", affinity.request_model, false),
+                    failover_affinity,
+                    failover_access_token,
+                    failover_traffic_account_id
+                )) {
+                try {
+                    plan = openai::build_responses_http_request_plan(
+                        *failover_body,
+                        bridged_headers,
+                        failover_access_token,
+                        failover_affinity.account_id,
+                        ""
+                    );
+                    resolved_affinity = failover_affinity;
+                    access_token = std::move(failover_access_token);
+                    traffic_account_id = std::move(failover_traffic_account_id);
+                    request_body = *failover_body;
+                    continuation_request = session::request_has_previous_response_id(request_body);
+                    continuation_contains_function_call_output =
+                        continuation_request && session::request_contains_function_call_output(request_body);
+                    session::persist_sticky_affinity(resolved_affinity);
+                    core::logging::log_event(
+                        core::logging::LogLevel::Info,
+                        "runtime",
+                        "proxy",
+                        "responses_exhausted_account_failover",
+                        "route=" + std::string(route) + " account_id=" + resolved_affinity.account_id
+                    );
+                    upstream = execute_upstream(plan);
+                    (void)handle_exhausted_account_if_present(upstream, resolved_affinity.account_id);
+                } catch (const std::exception&) {
+                    core::logging::log_event(
+                        core::logging::LogLevel::Warning,
+                        "runtime",
+                        "proxy",
+                        "responses_exhausted_account_failover_rebuild_failed"
+                    );
+                }
+            }
+        }
+    }
     core::logging::log_event(
         core::logging::LogLevel::Info,
         "runtime",
@@ -681,7 +840,7 @@ ProxyJsonResult collect_responses_json(
         };
     }
     if (!upstream.body.empty()) {
-        session::remember_response_id_from_json(bridged_headers, upstream.body, resolved_affinity.account_id);
+        session::remember_response_id_from_json(bridged_headers, plan.body, upstream.body, resolved_affinity.account_id);
         return {
             .status = upstream.status,
             .body = upstream.body,
@@ -691,7 +850,7 @@ ProxyJsonResult collect_responses_json(
     }
 
     if (!upstream.events.empty()) {
-        session::remember_response_id_from_events(bridged_headers, upstream.events, resolved_affinity.account_id);
+        session::remember_response_id_from_events(bridged_headers, plan.body, upstream.events, resolved_affinity.account_id);
         if (const auto collected = collect_response_body_from_stream_events(upstream.events); collected.has_value()) {
             return {
                 .status = upstream.status,
@@ -1293,9 +1452,9 @@ ProxySseResult stream_responses_sse(
     const auto affinity = session::resolve_sticky_affinity(raw_request_body, bridged_headers);
     const auto continuation_guard =
         internal::guard_backend_codex_previous_response(route, raw_request_body, bridged_headers, affinity);
-    const auto& request_body = continuation_guard.request_body;
-    const bool continuation_request = continuation_guard.continuation_request;
-    const bool continuation_contains_function_call_output = continuation_guard.contains_function_call_output;
+    std::string request_body = continuation_guard.request_body;
+    bool continuation_request = continuation_guard.continuation_request;
+    bool continuation_contains_function_call_output = continuation_guard.contains_function_call_output;
     bool sticky_reused = affinity.from_persistence;
     const auto& preferred_account_id = continuation_guard.preferred_account_id;
     const auto& continuity_account_id = continuation_guard.continuity_account_id;
@@ -1316,18 +1475,59 @@ ProxySseResult stream_responses_sse(
         credential_preference = affinity.account_id;
     }
     const bool strict_preferred = continuation_request && !credential_preference.empty();
+    const auto strict_credential_preference = credential_preference;
+    const bool strict_preferred_account_known =
+        strict_preferred && session::upstream_account_record_exists(strict_credential_preference);
 
-    if (const auto credentials = session::resolve_upstream_account_credentials(
-            credential_preference,
-            affinity.request_model,
-            strict_preferred
-        );
-        credentials.has_value()) {
-        resolved_affinity.account_id = credentials->account_id;
-        access_token = credentials->access_token;
-        if (credentials->internal_account_id > 0) {
-            traffic_account_id = std::to_string(credentials->internal_account_id);
+    if (!apply_resolved_credentials(
+            session::resolve_upstream_account_credentials(credential_preference, affinity.request_model, strict_preferred),
+            resolved_affinity,
+            access_token,
+            traffic_account_id
+        ) &&
+        strict_preferred) {
+        const auto stripped =
+            affinity.from_header
+                ? std::optional<std::string>{}
+                : fallback_body_with_local_context(
+                      request_body,
+                      bridged_headers,
+                      continuation_request,
+                      continuation_contains_function_call_output
+                  );
+        if (stripped.has_value()) {
+            request_body = *stripped;
+            continuation_request = false;
+            continuation_contains_function_call_output = false;
+            credential_preference.clear();
+            resolved_affinity = affinity;
+            (void)apply_resolved_credentials(
+                session::resolve_upstream_account_credentials("", affinity.request_model, false),
+                resolved_affinity,
+                access_token,
+                traffic_account_id
+            );
+            sticky_reused = affinity.from_persistence;
         }
+    }
+    if (strict_preferred_account_known && access_token.empty()) {
+        core::logging::log_event(
+            core::logging::LogLevel::Warning,
+            "runtime",
+            "proxy",
+            "responses_sse_previous_response_account_unavailable",
+            "route=" + std::string(route) + " account_id=" + strict_credential_preference
+        );
+        return {
+            .status = 409,
+            .events = stream::build_responses_sse_failure(
+                "previous_response_account_unavailable",
+                "Previous response account is unavailable",
+                "invalid_request_error",
+                "previous_response_id"
+            ),
+            .sticky_reused = sticky_reused,
+        };
     }
     const auto upstream_stream_transport = session::resolve_upstream_stream_transport_setting();
     openai::UpstreamRequestPlan plan;
@@ -1476,7 +1676,13 @@ ProxySseResult stream_responses_sse(
             continuation_contains_function_call_output,
             upstream
         )) {
-        if (const auto stripped = session::strip_previous_response_id(request_body); stripped.has_value()) {
+        if (const auto stripped = fallback_body_with_local_context(
+                request_body,
+                bridged_headers,
+                continuation_request,
+                continuation_contains_function_call_output
+            );
+            stripped.has_value()) {
             core::logging::log_event(
                 core::logging::LogLevel::Info,
                 "runtime",
@@ -1499,6 +1705,10 @@ ProxySseResult stream_responses_sse(
                 if (turn_state_it != bridged_headers.end() && !turn_state_it->second.empty()) {
                     plan.headers["x-codex-turn-state"] = turn_state_it->second;
                 }
+                request_body = *stripped;
+                continuation_request = session::request_has_previous_response_id(request_body);
+                continuation_contains_function_call_output =
+                    continuation_request && session::request_contains_function_call_output(request_body);
                 upstream = execute_upstream(plan);
             } catch (const std::exception&) {
                 core::logging::log_event(
@@ -1510,7 +1720,69 @@ ProxySseResult stream_responses_sse(
             }
         }
     }
-    (void)handle_exhausted_account_if_present(upstream, resolved_affinity.account_id);
+    const bool sse_marked_exhausted = handle_exhausted_account_if_present(upstream, resolved_affinity.account_id);
+    if (sse_marked_exhausted && !affinity.from_header) {
+        if (const auto failover_body =
+                fallback_body_with_local_context(
+                    request_body,
+                    bridged_headers,
+                    continuation_request,
+                    continuation_contains_function_call_output
+                );
+            failover_body.has_value()) {
+            session::StickyAffinityResolution failover_affinity = affinity;
+            std::string failover_access_token;
+            std::string failover_traffic_account_id;
+            if (apply_resolved_credentials(
+                    session::resolve_upstream_account_credentials("", affinity.request_model, false),
+                    failover_affinity,
+                    failover_access_token,
+                    failover_traffic_account_id
+                )) {
+                try {
+                    const auto registry = openai::build_default_model_registry();
+                    plan = openai::build_responses_stream_request_plan(
+                        *failover_body,
+                        bridged_headers,
+                        failover_access_token,
+                        failover_affinity.account_id,
+                        registry,
+                        upstream_stream_transport
+                    );
+                    plan.preserve_upstream_websocket_session =
+                        backend_codex_route && plan.transport == "websocket";
+                    const auto turn_state_it = bridged_headers.find("x-codex-turn-state");
+                    if (turn_state_it != bridged_headers.end() && !turn_state_it->second.empty()) {
+                        plan.headers["x-codex-turn-state"] = turn_state_it->second;
+                    }
+                    resolved_affinity = failover_affinity;
+                    access_token = std::move(failover_access_token);
+                    traffic_account_id = std::move(failover_traffic_account_id);
+                    request_body = *failover_body;
+                    continuation_request = session::request_has_previous_response_id(request_body);
+                    continuation_contains_function_call_output =
+                        continuation_request && session::request_contains_function_call_output(request_body);
+                    session::persist_sticky_affinity(resolved_affinity);
+                    core::logging::log_event(
+                        core::logging::LogLevel::Info,
+                        "runtime",
+                        "proxy",
+                        "responses_sse_exhausted_account_failover",
+                        "route=" + std::string(route) + " account_id=" + resolved_affinity.account_id
+                    );
+                    upstream = execute_upstream(plan);
+                    (void)handle_exhausted_account_if_present(upstream, resolved_affinity.account_id);
+                } catch (const std::exception&) {
+                    core::logging::log_event(
+                        core::logging::LogLevel::Warning,
+                        "runtime",
+                        "proxy",
+                        "responses_sse_exhausted_account_failover_rebuild_failed"
+                    );
+                }
+            }
+        }
+    }
     core::logging::log_event(
         core::logging::LogLevel::Info,
         "runtime",
@@ -1535,7 +1807,7 @@ ProxySseResult stream_responses_sse(
     const auto downstream_status = upstream.status == 101 ? 200 : upstream.status;
 
     if (!upstream.events.empty()) {
-        session::remember_response_id_from_events(bridged_headers, upstream.events, resolved_affinity.account_id);
+        session::remember_response_id_from_events(bridged_headers, plan.body, upstream.events, resolved_affinity.account_id);
         return {
             .status = downstream_status,
             .events = upstream.events,

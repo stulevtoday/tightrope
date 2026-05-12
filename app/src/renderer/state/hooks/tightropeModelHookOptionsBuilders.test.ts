@@ -432,6 +432,7 @@ describe('tightropeModelHookOptionsBuilders', () => {
       Math.max(0, Math.min(offset, Math.max(0, totalCount - sessionsPageSize))),
     );
     const listStickySessionsRequest = vi.fn(async () => ({ generatedAtMs: Date.now(), sessions: [] }));
+    const purgeStaleSessionsRequest = vi.fn(async () => ({ generatedAtMs: Date.now(), purged: 0 }));
     const pushRuntimeEvent = vi.fn();
 
     const options = buildSessionsOptions({
@@ -442,6 +443,7 @@ describe('tightropeModelHookOptionsBuilders', () => {
       mapRuntimeStickySession,
       clampSessionsOffset,
       listStickySessionsRequest,
+      purgeStaleSessionsRequest,
       pushRuntimeEvent,
     });
 
@@ -450,16 +452,21 @@ describe('tightropeModelHookOptionsBuilders', () => {
     expect(options.setState).toBe(setState);
     expect(options.mapRuntimeStickySession).toBe(mapRuntimeStickySession);
     expect(options.listStickySessionsRequest).toBe(listStickySessionsRequest);
+    expect(options.purgeStaleSessionsRequest).toBe(purgeStaleSessionsRequest);
     expect(options.clampSessionsOffset(30, 50)).toBe(30);
     expect(clampSessionsOffset).toHaveBeenCalledWith(30, 50, 10);
     options.reportPollingError?.('sticky session polling failed; retrying');
     expect(pushRuntimeEvent).toHaveBeenCalledWith('sticky session polling failed; retrying', 'warn');
+    options.reportPurgeError?.('sticky session purge failed');
+    expect(pushRuntimeEvent).toHaveBeenCalledWith('sticky session purge failed', 'warn');
     expect(sortedKeys(options)).toEqual([
       'clampSessionsOffset',
       'listStickySessionsRequest',
       'mapRuntimeStickySession',
+      'purgeStaleSessionsRequest',
       'refreshMs',
       'reportPollingError',
+      'reportPurgeError',
       'sessionsRuntimeLimit',
       'setState',
     ]);

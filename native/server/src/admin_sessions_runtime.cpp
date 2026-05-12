@@ -50,6 +50,11 @@ std::string sticky_sessions_json(const controllers::StickySessionsResponse& resp
     return body;
 }
 
+std::string sticky_sessions_purge_json(const controllers::StickySessionsPurgeResponse& response) {
+    return std::string(R"({"generatedAtMs":)") + std::to_string(response.generated_at_ms) + R"(,"purged":)" +
+           std::to_string(response.purged) + "}";
+}
+
 void list_sessions_route(uWS::HttpResponse<false>* res, uWS::HttpRequest* req) {
     const auto limit = parse_size_query(req->getQuery("limit")).value_or(kDefaultSessionsLimit);
     const auto offset = parse_size_query(req->getQuery("offset")).value_or(0);
@@ -61,11 +66,22 @@ void list_sessions_route(uWS::HttpResponse<false>* res, uWS::HttpRequest* req) {
     http::write_json(res, response.status, dashboard_error_json(response.code, response.message));
 }
 
+void purge_sessions_route(uWS::HttpResponse<false>* res) {
+    const auto response = controllers::purge_stale_sticky_sessions();
+    if (response.status == 200) {
+        http::write_json(res, 200, sticky_sessions_purge_json(response));
+        return;
+    }
+    http::write_json(res, response.status, dashboard_error_json(response.code, response.message));
+}
+
 } // namespace
 
 void wire_sessions_routes(uWS::App& app) {
     app.get("/api/sessions", [](uWS::HttpResponse<false>* res, uWS::HttpRequest* req) { list_sessions_route(res, req); });
     app.get("/api/sessions/", [](uWS::HttpResponse<false>* res, uWS::HttpRequest* req) { list_sessions_route(res, req); });
+    app.post("/api/sessions/purge-stale", [](uWS::HttpResponse<false>* res, uWS::HttpRequest*) { purge_sessions_route(res); });
+    app.post("/api/sessions/purge-stale/", [](uWS::HttpResponse<false>* res, uWS::HttpRequest*) { purge_sessions_route(res); });
 }
 
 } // namespace tightrope::server::internal::admin

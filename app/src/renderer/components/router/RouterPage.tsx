@@ -5,6 +5,7 @@ import {
   useNavigationContext,
   useRouterDerivedContext,
   useRuntimeContext,
+  useSessionsContext,
   useSettingsContext,
 } from '../../state/context';
 import { InspectorPane } from './sections/InspectorPane';
@@ -18,6 +19,7 @@ export function RouterPage() {
   const logs = useLogsContext();
   const derived = useRouterDerivedContext();
   const runtime = useRuntimeContext();
+  const sessions = useSessionsContext();
   const settings = useSettingsContext();
   const recentRouteActivityByAccount = useMemo(() => {
     const latestByAccount = new Map<string, number>();
@@ -49,6 +51,8 @@ export function RouterPage() {
           metrics={derived.metrics}
           routedAccountId={derived.routedAccountId}
           lockedRoutingAccountIds={settings.dashboardSettings.lockedRoutingAccountIds}
+          sessions={sessions.sessions}
+          clusterStatus={settings.clusterStatus}
           recentRouteActivityByAccount={recentRouteActivityByAccount}
           trafficNowMs={accounts.trafficClockMs}
           trafficActiveWindowMs={accounts.trafficActiveWindowMs}
@@ -56,6 +60,7 @@ export function RouterPage() {
           onSelectAccount={derived.setSelectedAccountId}
           onTogglePin={accounts.toggleAccountPin}
           onUpdateLockedRoutingAccountIds={settings.updateLockedRoutingAccountIds}
+          onOpenSyncTopology={settings.openSyncTopology}
           onOpenAddAccount={accounts.openAddAccountDialog}
         />
         <RequestsLedgerPane

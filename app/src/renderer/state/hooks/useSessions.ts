@@ -9,15 +9,18 @@ export interface UseSessionsOptions {
   mapRuntimeStickySession: (record: RuntimeStickySession, generatedAtMs: number) => AppRuntimeState['sessions'][number];
   clampSessionsOffset: (offset: number, totalCount: number) => number;
   listStickySessionsRequest: TightropeService['listStickySessionsRequest'];
+  purgeStaleSessionsRequest: TightropeService['purgeStaleSessionsRequest'];
   reportPollingError?: (message: string) => void;
+  reportPurgeError?: (message: string) => void;
 }
 
 interface UseSessionsResult {
   refreshStickySessions: () => Promise<void>;
+  purgeStaleSessions: () => Promise<void>;
 }
 
 export function useSessions(options: UseSessionsOptions): UseSessionsResult {
-  const { listStickySessionsRequest } = options;
+  const { listStickySessionsRequest, purgeStaleSessionsRequest } = options;
   const refreshInFlightRef = useRef(false);
   const pollErrorReportedRef = useRef(false);
 
@@ -54,6 +57,15 @@ export function useSessions(options: UseSessionsOptions): UseSessionsResult {
     }
   }, [listStickySessionsRequest, options]);
 
+  const purgeStaleSessions = useCallback(async (): Promise<void> => {
+    try {
+      await purgeStaleSessionsRequest();
+      await refreshStickySessions();
+    } catch {
+      options.reportPurgeError?.('sticky session purge failed');
+    }
+  }, [options, purgeStaleSessionsRequest, refreshStickySessions]);
+
   useEffect(() => {
     const handle = setInterval(() => {
       void refreshStickySessions().catch(() => {
@@ -70,5 +82,5 @@ export function useSessions(options: UseSessionsOptions): UseSessionsResult {
     };
   }, [options.refreshMs, refreshStickySessions]);
 
-  return { refreshStickySessions };
+  return { refreshStickySessions, purgeStaleSessions };
 }

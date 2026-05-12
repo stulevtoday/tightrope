@@ -199,6 +199,13 @@ export function registerIpcHandlers(): void {
     const offset = Number.isFinite(payload?.offset) ? Math.max(0, Math.trunc(payload?.offset ?? 0)) : 0;
     return runtimeRequest(`/api/sessions?limit=${limit}&offset=${offset}`, undefined, 0);
   });
+  ipcMain.handle('sessions:purge-stale', () =>
+    runtimeRequest('/api/sessions/purge-stale', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }, 0),
+  );
   ipcMain.handle('logs:list', (_event, payload?: { limit?: number; offset?: number }) => {
     const limit = Number.isFinite(payload?.limit) ? Math.max(1, Math.trunc(payload?.limit ?? 0)) : 200;
     const offset = Number.isFinite(payload?.offset) ? Math.max(0, Math.trunc(payload?.offset ?? 0)) : 0;

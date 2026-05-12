@@ -33,6 +33,7 @@ export function useTightropeModel(service: TightropeService): TightropeModel {
   const {
     settingsState,
     accountsState,
+    sessionsState,
     oauthState,
     firewallState,
     runtimeDomain,
@@ -133,7 +134,12 @@ export function useTightropeModel(service: TightropeService): TightropeModel {
     accountActions,
   });
 
-  const sessionsAndLogsActions = buildSessionsAndLogsActions({ uiState });
+  const sessionsAndLogsActions = buildSessionsAndLogsActions({
+    uiState: {
+      ...uiState,
+      purgeStaleSessions: sessionsState.purgeStaleSessions,
+    },
+  });
 
   const model = buildTightropeModel({
     stateData,

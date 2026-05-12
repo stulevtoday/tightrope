@@ -1,11 +1,15 @@
 import i18next from 'i18next';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Account } from '../../shared/types';
+import { AccountSessionChip, type AccountSessionSummary } from '../shared/CollaborationStatusPanel';
 
 interface AccountsSidebarProps {
   filteredAccounts: Account[];
   totalAccounts: number;
   selectedAccountDetail: Account | null;
+  routedAccountId?: string | null;
+  accountSessionSummaries?: Map<string, AccountSessionSummary>;
   trafficNowMs: number;
   accountSearchQuery: string;
   accountStatusFilter: '' | 'active' | 'paused' | 'rate_limited' | 'deactivated' | 'quota_blocked';
@@ -146,6 +150,8 @@ export function AccountsSidebar({
   filteredAccounts,
   totalAccounts,
   selectedAccountDetail,
+  routedAccountId = null,
+  accountSessionSummaries = new Map<string, AccountSessionSummary>(),
   trafficNowMs,
   accountSearchQuery,
   accountStatusFilter,
@@ -157,6 +163,20 @@ export function AccountsSidebar({
   onSelectDetail,
 }: AccountsSidebarProps) {
   const { t } = useTranslation();
+  const sortedAccounts = useMemo(() => {
+    if (!routedAccountId || !filteredAccounts.some((account) => account.id === routedAccountId)) {
+      return filteredAccounts;
+    }
+    return [...filteredAccounts].sort((left, right) => {
+      const leftRouted = left.id === routedAccountId;
+      const rightRouted = right.id === routedAccountId;
+      if (leftRouted !== rightRouted) {
+        return leftRouted ? -1 : 1;
+      }
+      return 0;
+    });
+  }, [filteredAccounts, routedAccountId]);
+
   return (
     <div className="accounts-sidebar">
       <header className="section-header">
@@ -200,13 +220,16 @@ export function AccountsSidebar({
       </div>
       <div className="pane-body">
         <div className="accounts-list">
-          {filteredAccounts.length === 0 ? (
+          {sortedAccounts.length === 0 ? (
             <div className="empty-detail">
               <span>{t('accounts.sidebar_no_matching')}</span>
             </div>
           ) : (
-            filteredAccounts.map((account) => {
+            sortedAccounts.map((account) => {
               const attentionReason = accountAttentionReason(account);
+              const isRouted = account.id === routedAccountId;
+              const accountSessionSummary = accountSessionSummaries.get(account.id);
+              const hasSessionChip = (accountSessionSummary?.active ?? 0) > 0;
               const stateLabel =
                 account.state === 'active' ? null : (
                   <span className={`status-badge ${accountStateBadgeClass(account.state)}`}>{t(`common.state_${account.state}`)}</span>
@@ -232,7 +255,7 @@ export function AccountsSidebar({
               return (
                 <div
                   key={account.id}
-                  className={`account-item${account.id === selectedAccountDetail?.id ? ' active' : ''}${attentionReason ? ' needs-attention' : ''}`}
+                  className={`account-item${account.id === selectedAccountDetail?.id ? ' active' : ''}${isRouted ? ' routed' : ''}${attentionReason ? ' needs-attention' : ''}`}
                   role="button"
                   tabIndex={0}
                   onClick={() => onSelectDetail(account.id)}
@@ -247,16 +270,20 @@ export function AccountsSidebar({
                     <span className="account-name" title={account.name}>
                       {account.name}
                     </span>
-                    {attentionReason ? (
+                    {attentionReason || isRouted || hasSessionChip ? (
                       <span className="account-top-right">
-                        <span
-                          className="attention-sign"
-                          role="img"
-                          aria-label={t('accounts.sidebar_needs_attention', { reason: attentionReason })}
-                          title={attentionReason}
-                        >
-                          <span className="attention-sign-mark">!</span>
-                        </span>
+                        <AccountSessionChip summary={accountSessionSummary} />
+                        {isRouted ? <span className="routed-dot routed-dot-subtle" title={t('router.pool_routed_account')} aria-hidden="true" /> : null}
+                        {attentionReason ? (
+                          <span
+                            className="attention-sign"
+                            role="img"
+                            aria-label={t('accounts.sidebar_needs_attention', { reason: attentionReason })}
+                            title={attentionReason}
+                          >
+                            <span className="attention-sign-mark">!</span>
+                          </span>
+                        ) : null}
                       </span>
                     ) : null}
                   </div>

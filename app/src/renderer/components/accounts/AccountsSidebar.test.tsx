@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import type { Account } from '../../shared/types';
+import type { AccountSessionSummary } from '../shared/CollaborationStatusPanel';
 import { AccountsSidebar } from './AccountsSidebar';
 
 function accountFixture(overrides: Partial<Account> = {}): Account {
@@ -39,12 +40,19 @@ function accountFixture(overrides: Partial<Account> = {}): Account {
   };
 }
 
-function renderSidebar(accounts: Account[], trafficNowMs = Date.now()): void {
-  render(
+function renderSidebar(
+  accounts: Account[],
+  trafficNowMs = Date.now(),
+  routedAccountId: string | null = null,
+  accountSessionSummaries = new Map<string, AccountSessionSummary>(),
+) {
+  return render(
     <AccountsSidebar
       filteredAccounts={accounts}
       totalAccounts={accounts.length}
       selectedAccountDetail={null}
+      routedAccountId={routedAccountId}
+      accountSessionSummaries={accountSessionSummaries}
       trafficNowMs={trafficNowMs}
       accountSearchQuery=""
       accountStatusFilter=""
@@ -56,6 +64,10 @@ function renderSidebar(accounts: Account[], trafficNowMs = Date.now()): void {
       onSelectDetail={vi.fn()}
     />,
   );
+}
+
+function accountListOrder(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll('.account-item .account-name')).map((element) => element.textContent?.trim() ?? '');
 }
 
 describe('AccountsSidebar attention indicator', () => {
@@ -111,5 +123,48 @@ describe('AccountsSidebar attention indicator', () => {
     expect(row).not.toBeNull();
     expect(row).toHaveTextContent(/5-hour left/i);
     expect(row).toHaveTextContent(/Weekly left/i);
+  });
+
+  test('moves the currently routed account to the top without changing the rest of the list', () => {
+    const { container } = renderSidebar(
+      [
+        accountFixture({ id: 'acc_alpha', name: 'alpha@test.local' }),
+        accountFixture({ id: 'acc_bravo', name: 'bravo@test.local' }),
+        accountFixture({ id: 'acc_charlie', name: 'charlie@test.local' }),
+      ],
+      Date.now(),
+      'acc_charlie',
+    );
+
+    expect(accountListOrder(container)).toEqual([
+      'charlie@test.local',
+      'alpha@test.local',
+      'bravo@test.local',
+    ]);
+  });
+
+  test('shows a session chip for accounts with active pinned sessions', () => {
+    const { container } = renderSidebar(
+      [accountFixture({ id: 'acc_active', name: 'active@test.local' })],
+      Date.now(),
+      null,
+      new Map([
+        [
+          'acc_active',
+          {
+            active: 2,
+            stale: 0,
+            codex: 2,
+            sticky: 0,
+            promptCache: 0,
+          },
+        ],
+      ]),
+    );
+
+    const chip = container.querySelector('.account-session-chip.parallel');
+    expect(chip).not.toBeNull();
+    expect(chip).toHaveTextContent('2');
+    expect(chip).toHaveAttribute('title', '2 Codex sessions are pinned to this account');
   });
 });

@@ -4,6 +4,7 @@ import { useNavigationContext } from '../../state/context';
 
 const NAV_ITEMS: Array<{ page: AppPage; titleKey: string; subtitleKey: string }> = [
   { page: 'router', titleKey: 'nav.router_title', subtitleKey: 'nav.router_subtitle' },
+  { page: 'trace', titleKey: 'nav.trace_title', subtitleKey: 'nav.trace_subtitle' },
   { page: 'accounts', titleKey: 'nav.accounts_title', subtitleKey: 'nav.accounts_subtitle' },
   { page: 'sessions', titleKey: 'nav.sessions_title', subtitleKey: 'nav.sessions_subtitle' },
   { page: 'logs', titleKey: 'nav.logs_title', subtitleKey: 'nav.logs_subtitle' },

@@ -87,10 +87,17 @@ export function useRouterDerivedContextValue(model: TightropeModel): RouterDeriv
     () => deriveKpis(model.state.rows, model.accounts),
     [model.accounts, model.state.rows],
   );
-  const routedAccountId = useMemo(
+  const fallbackRoutedAccountId = useMemo(
     () => selectRoutedAccountId(model.accounts, metrics, model.state.rows),
     [metrics, model.accounts, model.state.rows],
   );
+  const routedAccountId = useMemo(() => {
+    const signaledAccountId = model.state.currentRoutedAccountId?.trim() ?? '';
+    if (signaledAccountId && model.accounts.some((account) => account.id === signaledAccountId)) {
+      return signaledAccountId;
+    }
+    return fallbackRoutedAccountId;
+  }, [fallbackRoutedAccountId, model.accounts, model.state.currentRoutedAccountId]);
 
   const routerState = useMemo(
     () => currentRouterState(model.state.runtimeState),
@@ -160,6 +167,7 @@ export function useSessionsContextValue(model: TightropeModel): SessionsContextV
 
   return useMemo(
     () => ({
+      sessions: model.state.sessions,
       sessionsKindFilter: model.state.sessionsKindFilter,
       sessionsView,
       sessionsPaginationLabel,
@@ -177,6 +185,7 @@ export function useSessionsContextValue(model: TightropeModel): SessionsContextV
       model.prevSessionsPage,
       model.purgeStaleSessions,
       model.setSessionsKindFilter,
+      model.state.sessions,
       model.state.sessionsKindFilter,
       sessionsPaginationLabel,
       sessionsView,

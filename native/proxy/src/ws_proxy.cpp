@@ -135,6 +135,60 @@ std::vector<std::string> normalize_upstream_frames(const std::vector<std::string
     return normalized;
 }
 
+std::optional<std::string> fallback_body_without_previous_response(
+    const std::string& request_body,
+    const bool continuation_request,
+    const bool contains_function_call_output
+) {
+    if (!continuation_request) {
+        return request_body;
+    }
+    if (contains_function_call_output) {
+        return std::nullopt;
+    }
+    if (const auto stripped = session::strip_previous_response_id(request_body); stripped.has_value()) {
+        return *stripped;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> fallback_body_with_local_context(
+    const std::string& request_body,
+    const openai::HeaderMap& headers,
+    const bool continuation_request,
+    const bool contains_function_call_output
+) {
+    if (!continuation_request) {
+        return request_body;
+    }
+    if (contains_function_call_output) {
+        return std::nullopt;
+    }
+    if (const auto recovered = session::rebuild_request_body_with_local_context(request_body, headers);
+        recovered.has_value()) {
+        return recovered;
+    }
+    return fallback_body_without_previous_response(request_body, continuation_request, contains_function_call_output);
+}
+
+bool apply_resolved_credentials(
+    const std::optional<session::UpstreamAccountCredentials>& credentials,
+    session::StickyAffinityResolution& resolved_affinity,
+    std::string& access_token,
+    std::string& traffic_account_id
+) {
+    if (!credentials.has_value()) {
+        return false;
+    }
+    resolved_affinity.account_id = credentials->account_id;
+    access_token = credentials->access_token;
+    traffic_account_id.clear();
+    if (credentials->internal_account_id > 0) {
+        traffic_account_id = std::to_string(credentials->internal_account_id);
+    }
+    return true;
+}
+
 bool is_ascii_ws_trim_char(const unsigned char value) {
     return value <= 0x20 || value == 0x7F;
 }
@@ -683,13 +737,16 @@ ProxyWsResult proxy_responses_websocket(
     session::StickyAffinityResolution resolved_affinity;
     internal::ContinuationRequestGuard continuation_guard;
     const std::string* effective_request_body = &bridged_request_body;
+    std::string fallback_request_body;
     bool continuation_request = false;
     bool continuation_contains_function_call_output = false;
     bool sticky_reused = false;
+    bool explicit_account_header = false;
     std::string access_token;
     std::string traffic_account_id;
     if (response_create_request) {
         const auto affinity = session::resolve_sticky_affinity(bridged_request_body, bridged_headers);
+        explicit_account_header = affinity.from_header;
         continuation_guard =
             internal::guard_backend_codex_previous_response(route, bridged_request_body, bridged_headers, affinity);
         effective_request_body = &continuation_guard.request_body;
@@ -713,18 +770,61 @@ ProxyWsResult proxy_responses_websocket(
             credential_preference = affinity.account_id;
         }
         const bool strict_preferred = continuation_request && !credential_preference.empty();
+        const auto strict_credential_preference = credential_preference;
+        const bool strict_preferred_account_known =
+            strict_preferred && session::upstream_account_record_exists(strict_credential_preference);
 
-        if (const auto credentials = session::resolve_upstream_account_credentials(
-                credential_preference,
-                affinity.request_model,
-                strict_preferred
-            );
-            credentials.has_value()) {
-            resolved_affinity.account_id = credentials->account_id;
-            access_token = credentials->access_token;
-            if (credentials->internal_account_id > 0) {
-                traffic_account_id = std::to_string(credentials->internal_account_id);
+        if (!apply_resolved_credentials(
+                session::resolve_upstream_account_credentials(credential_preference, affinity.request_model, strict_preferred),
+                resolved_affinity,
+                access_token,
+                traffic_account_id
+            ) &&
+            strict_preferred) {
+            const auto stripped =
+                affinity.from_header
+                    ? std::optional<std::string>{}
+                    : fallback_body_with_local_context(
+                          *effective_request_body,
+                          bridged_headers,
+                          continuation_request,
+                          continuation_contains_function_call_output
+                      );
+            if (stripped.has_value()) {
+                fallback_request_body = *stripped;
+                effective_request_body = &fallback_request_body;
+                continuation_request = false;
+                continuation_contains_function_call_output = false;
+                credential_preference.clear();
+                resolved_affinity = affinity;
+                (void)apply_resolved_credentials(
+                    session::resolve_upstream_account_credentials("", affinity.request_model, false),
+                    resolved_affinity,
+                    access_token,
+                    traffic_account_id
+                );
+                sticky_reused = affinity.from_persistence;
             }
+        }
+        if (strict_preferred_account_known && access_token.empty()) {
+            core::logging::log_event(
+                core::logging::LogLevel::Warning,
+                "runtime",
+                "proxy",
+                "responses_ws_previous_response_account_unavailable",
+                "route=" + std::string(route) + " account_id=" + strict_credential_preference
+            );
+            return build_websocket_error_result(
+                409,
+                false,
+                1011,
+                "previous_response_account_unavailable",
+                "Previous response account is unavailable",
+                "invalid_request_error",
+                "previous_response_id",
+                resolved_affinity.account_id,
+                sticky_reused
+            );
         }
     }
 
@@ -870,10 +970,15 @@ ProxyWsResult proxy_responses_websocket(
             }
         }
     }
-    if (response_create_request && backend_codex_route && continuation_request &&
-        !continuation_contains_function_call_output &&
+    if (response_create_request && continuation_request && !continuation_contains_function_call_output &&
         internal::resolved_upstream_error_code(upstream) == "previous_response_not_found") {
-        if (const auto stripped = session::strip_previous_response_id(*effective_request_body); stripped.has_value()) {
+        if (const auto stripped = fallback_body_with_local_context(
+                *effective_request_body,
+                bridged_headers,
+                continuation_request,
+                continuation_contains_function_call_output
+            );
+            stripped.has_value()) {
             core::logging::log_event(
                 core::logging::LogLevel::Info,
                 "runtime",
@@ -890,6 +995,11 @@ ProxyWsResult proxy_responses_websocket(
                     ""
                 );
                 plan.preserve_upstream_websocket_session = backend_codex_route;
+                fallback_request_body = *stripped;
+                effective_request_body = &fallback_request_body;
+                continuation_request = session::request_has_previous_response_id(*effective_request_body);
+                continuation_contains_function_call_output =
+                    continuation_request && session::request_contains_function_call_output(*effective_request_body);
                 upstream = execute_upstream(plan);
             } catch (const std::exception&) {
                 core::logging::log_event(
@@ -902,7 +1012,63 @@ ProxyWsResult proxy_responses_websocket(
         }
     }
     if (response_create_request) {
-        (void)handle_exhausted_account_if_present(upstream, resolved_affinity.account_id);
+        const bool marked_exhausted = handle_exhausted_account_if_present(upstream, resolved_affinity.account_id);
+        if (marked_exhausted && !explicit_account_header) {
+            if (const auto failover_body = fallback_body_with_local_context(
+                    *effective_request_body,
+                    bridged_headers,
+                    continuation_request,
+                    continuation_contains_function_call_output
+                );
+                failover_body.has_value()) {
+                session::StickyAffinityResolution failover_affinity = resolved_affinity;
+                failover_affinity.account_id.clear();
+                std::string failover_access_token;
+                std::string failover_traffic_account_id;
+                if (apply_resolved_credentials(
+                        session::resolve_upstream_account_credentials("", resolved_affinity.request_model, false),
+                        failover_affinity,
+                        failover_access_token,
+                        failover_traffic_account_id
+                    )) {
+                    try {
+                        plan = openai::build_responses_websocket_request_plan(
+                            *failover_body,
+                            bridged_headers,
+                            failover_access_token,
+                            failover_affinity.account_id,
+                            ""
+                        );
+                        plan.preserve_upstream_websocket_session = backend_codex_route;
+                        resolved_affinity = failover_affinity;
+                        access_token = std::move(failover_access_token);
+                        traffic_account_id = std::move(failover_traffic_account_id);
+                        fallback_request_body = *failover_body;
+                        effective_request_body = &fallback_request_body;
+                        continuation_request = session::request_has_previous_response_id(*effective_request_body);
+                        continuation_contains_function_call_output =
+                            continuation_request && session::request_contains_function_call_output(*effective_request_body);
+                        session::persist_sticky_affinity(resolved_affinity);
+                        core::logging::log_event(
+                            core::logging::LogLevel::Info,
+                            "runtime",
+                            "proxy",
+                            "responses_ws_exhausted_account_failover",
+                            "route=" + std::string(route) + " account_id=" + resolved_affinity.account_id
+                        );
+                        upstream = execute_upstream(plan);
+                        (void)handle_exhausted_account_if_present(upstream, resolved_affinity.account_id);
+                    } catch (const std::exception&) {
+                        core::logging::log_event(
+                            core::logging::LogLevel::Warning,
+                            "runtime",
+                            "proxy",
+                            "responses_ws_exhausted_account_failover_rebuild_failed"
+                        );
+                    }
+                }
+            }
+        }
     }
     core::logging::log_event(
         core::logging::LogLevel::Info,
@@ -982,7 +1148,7 @@ ProxyWsResult proxy_responses_websocket(
         };
     }
 
-    session::remember_response_id_from_events(bridged_headers, upstream.events, resolved_affinity.account_id);
+    session::remember_response_id_from_events(bridged_headers, plan.body, upstream.events, resolved_affinity.account_id);
 
     return {
         .status = 101,

@@ -129,6 +129,7 @@ Object.defineProperty(window, 'tightrope', {
     onAboutOpen: () => () => {},
     listAccounts: async () => ({ accounts: [] }),
     listStickySessions: async () => ({ generatedAtMs: Date.now(), sessions: [] }),
+    purgeStaleSessions: async () => ({ generatedAtMs: Date.now(), purged: 0 }),
     listRequestLogs: async () => ({ limit: 200, offset: 0, logs: [] }),
     listAccountTraffic: async () => ({ generatedAtMs: Date.now(), accounts: [] }),
     importAccount: async ({ email, provider }: { email: string; provider: string }) => ({

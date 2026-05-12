@@ -61,4 +61,23 @@ StickySessionsResponse list_sticky_sessions(const std::size_t limit, const std::
     return response;
 }
 
+StickySessionsPurgeResponse purge_stale_sticky_sessions(sqlite3* db) {
+    auto handle = open_controller_db(db);
+    const auto generated_at_ms = now_ms();
+    if (handle.db == nullptr) {
+        return {
+            .status = 500,
+            .code = "db_unavailable",
+            .message = "Database unavailable",
+            .generated_at_ms = generated_at_ms,
+        };
+    }
+
+    return {
+        .status = 200,
+        .generated_at_ms = generated_at_ms,
+        .purged = db::purge_expired_proxy_sticky_sessions(handle.db, generated_at_ms),
+    };
+}
+
 } // namespace tightrope::server::controllers

@@ -39,6 +39,7 @@ function createServiceMocks(): TightropeService {
     oauthManualCallbackRequest: vi.fn(async () => ({ status: 'error', errorMessage: null })),
     listAccountsRequest: vi.fn(async () => []),
     listStickySessionsRequest: vi.fn(async () => ({ generatedAtMs: Date.now(), sessions: [] })),
+    purgeStaleSessionsRequest: vi.fn(async () => ({ generatedAtMs: Date.now(), purged: 0 })),
     listRequestLogsRequest: vi.fn(async () => []),
     listAccountTrafficRequest: vi.fn(async () => []),
     backendStatusRequest: vi.fn(async () => ({ enabled: true })),

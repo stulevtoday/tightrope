@@ -704,18 +704,24 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "responses JSON path preserves previous_response_id after previous_response_not_found",
+    "responses JSON path retries without previous_response_id after previous_response_not_found",
     "[proxy][transport][guard]"
 ) {
     std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
     auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
         [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
             observed_plans.push_back(plan);
+            if (plan.body.find("\"previous_response_id\":\"resp_stale_json_guard\"") != std::string::npos) {
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 400,
+                    .body =
+                        R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
+                    .error_code = "previous_response_not_found",
+                };
+            }
             return tightrope::proxy::UpstreamExecutionResult{
-                .status = 400,
-                .body =
-                    R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
-                .error_code = "previous_response_not_found",
+                .status = 200,
+                .body = R"({"id":"resp_stale_json_guard_recovered","object":"response","status":"completed","output":[]})",
             };
         }
     );
@@ -725,9 +731,72 @@ TEST_CASE(
         R"({"model":"gpt-5.4","input":"guard json retry","previous_response_id":"resp_stale_json_guard"})";
     const auto response = tightrope::server::controllers::post_proxy_responses_json("/v1/responses", payload);
 
-    REQUIRE(response.status == 400);
-    REQUIRE(observed_plans.size() == 1);
+    REQUIRE(response.status == 200);
+    REQUIRE(observed_plans.size() == 2);
     REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_json_guard\"") != std::string::npos);
+    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
+}
+
+TEST_CASE(
+    "responses JSON path rebuilds local text context when previous_response_id disappears",
+    "[proxy][transport][guard][context]"
+) {
+    const auto db_path = make_temp_proxy_db_path("local-context-json-recovery");
+    EnvVarGuard db_path_guard("TIGHTROPE_DB_PATH");
+    REQUIRE(setenv("TIGHTROPE_DB_PATH", db_path.string().c_str(), 1) == 0);
+
+    std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
+    auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
+        [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
+            observed_plans.push_back(plan);
+            if (observed_plans.size() == 1) {
+                REQUIRE(plan.body.find("context turn one") != std::string::npos);
+                REQUIRE(plan.body.find("\"previous_response_id\"") == std::string::npos);
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 200,
+                    .body =
+                        R"({"id":"resp_local_context_one","object":"response","status":"completed","output":[{"type":"reasoning","summary":[]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"assistant memory one"}]}]})",
+                };
+            }
+            if (observed_plans.size() == 2) {
+                REQUIRE(plan.body.find("\"previous_response_id\":\"resp_local_context_one\"") != std::string::npos);
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 400,
+                    .body =
+                        R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
+                    .error_code = "previous_response_not_found",
+                };
+            }
+
+            REQUIRE(plan.body.find("\"previous_response_id\"") == std::string::npos);
+            REQUIRE(plan.body.find("context turn one") != std::string::npos);
+            REQUIRE(plan.body.find("assistant memory one") != std::string::npos);
+            REQUIRE(plan.body.find("context turn two") != std::string::npos);
+            return tightrope::proxy::UpstreamExecutionResult{
+                .status = 200,
+                .body = R"({"id":"resp_local_context_recovered","object":"response","status":"completed","output":[]})",
+            };
+        }
+    );
+    const tightrope::tests::proxy::ScopedUpstreamTransport scoped_transport(fake);
+
+    const tightrope::proxy::openai::HeaderMap headers = {{"session_id", "local-context-json-session"}};
+    const auto first = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":"context turn one"})",
+        headers
+    );
+    REQUIRE(first.status == 200);
+
+    const auto second = tightrope::server::controllers::post_proxy_responses_json(
+        "/v1/responses",
+        R"({"model":"gpt-5.4","input":"context turn two","previous_response_id":"resp_local_context_one"})",
+        headers
+    );
+    REQUIRE(second.status == 200);
+    REQUIRE(observed_plans.size() == 3);
+
+    std::filesystem::remove(db_path);
 }
 
 TEST_CASE(
@@ -1037,18 +1106,27 @@ TEST_CASE("responses SSE path preserves upstream error message for exhausted acc
 }
 
 TEST_CASE(
-    "responses SSE path preserves previous_response_id after previous_response_not_found",
+    "responses SSE path retries without previous_response_id after previous_response_not_found",
     "[proxy][transport][guard][sse]"
 ) {
     std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
     auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
         [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
             observed_plans.push_back(plan);
+            if (plan.body.find("\"previous_response_id\":\"resp_stale_sse_guard\"") != std::string::npos) {
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 400,
+                    .body =
+                        R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
+                    .error_code = "previous_response_not_found",
+                };
+            }
             return tightrope::proxy::UpstreamExecutionResult{
-                .status = 400,
-                .body =
-                    R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
-                .error_code = "previous_response_not_found",
+                .status = 200,
+                .events = {
+                    R"({"type":"response.created","response":{"id":"resp_guard_sse_recovered","status":"in_progress"}})",
+                    R"({"type":"response.completed","response":{"id":"resp_guard_sse_recovered","object":"response","status":"completed","output":[]}})",
+                },
             };
         }
     );
@@ -1058,9 +1136,12 @@ TEST_CASE(
         R"({"model":"gpt-5.4","input":"guard sse retry","previous_response_id":"resp_stale_sse_guard"})";
     const auto response = tightrope::server::controllers::post_proxy_responses_sse("/v1/responses", payload);
 
-    REQUIRE(response.status == 400);
-    REQUIRE(observed_plans.size() == 1);
+    REQUIRE(response.status == 200);
+    REQUIRE(observed_plans.size() == 2);
     REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_sse_guard\"") != std::string::npos);
+    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
+    REQUIRE(response.events.size() == 2);
+    REQUIRE(response.events[1].find("\"resp_guard_sse_recovered\"") != std::string::npos);
 }
 
 TEST_CASE(
@@ -1725,18 +1806,29 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "responses websocket path preserves previous_response_id after previous_response_not_found",
+    "responses websocket path retries without previous_response_id after previous_response_not_found",
     "[proxy][transport][ws][guard]"
 ) {
     std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
     auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
         [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
             observed_plans.push_back(plan);
+            if (plan.body.find("\"previous_response_id\":\"resp_stale_ws_guard\"") != std::string::npos) {
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 400,
+                    .body =
+                        R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
+                    .error_code = "previous_response_not_found",
+                };
+            }
             return tightrope::proxy::UpstreamExecutionResult{
-                .status = 400,
-                .body =
-                    R"({"error":{"type":"invalid_request_error","code":"previous_response_not_found","message":"Previous response not found.","param":"previous_response_id"}})",
-                .error_code = "previous_response_not_found",
+                .status = 101,
+                .events = {
+                    R"({"type":"response.created","response":{"id":"resp_guard_ws_recovered","status":"in_progress"}})",
+                    R"({"type":"response.completed","response":{"id":"resp_guard_ws_recovered","object":"response","status":"completed","output":[]}})",
+                },
+                .accepted = true,
+                .close_code = 1000,
             };
         }
     );
@@ -1746,20 +1838,32 @@ TEST_CASE(
         R"({"model":"gpt-5.4","input":"guard ws retry","previous_response_id":"resp_stale_ws_guard"})";
     const auto response = tightrope::server::controllers::proxy_responses_websocket("/v1/responses", payload);
 
-    REQUIRE(response.status == 400);
-    REQUIRE_FALSE(response.accepted);
-    REQUIRE(observed_plans.size() == 1);
+    REQUIRE(response.status == 101);
+    REQUIRE(response.accepted);
+    REQUIRE(observed_plans.size() == 2);
     REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_ws_guard\"") != std::string::npos);
+    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
 }
 
 TEST_CASE(
-    "responses websocket path preserves previous_response_id when upstream returns 101 with previous_response_not_found event",
+    "responses websocket path retries when upstream returns 101 with previous_response_not_found event",
     "[proxy][transport][ws][guard]"
 ) {
     std::vector<tightrope::proxy::openai::UpstreamRequestPlan> observed_plans;
     auto fake = std::make_shared<tightrope::tests::proxy::FakeUpstreamTransport>(
         [&observed_plans](const tightrope::proxy::openai::UpstreamRequestPlan& plan) {
             observed_plans.push_back(plan);
+            if (plan.body.find("\"previous_response_id\":\"resp_stale_ws_guard_101\"") == std::string::npos) {
+                return tightrope::proxy::UpstreamExecutionResult{
+                    .status = 101,
+                    .events = {
+                        R"({"type":"response.created","response":{"id":"resp_guard_ws_recovered_101","status":"in_progress"}})",
+                        R"({"type":"response.completed","response":{"id":"resp_guard_ws_recovered_101","object":"response","status":"completed","output":[]}})",
+                    },
+                    .accepted = true,
+                    .close_code = 1000,
+                };
+            }
             return tightrope::proxy::UpstreamExecutionResult{
                 .status = 101,
                 .events = {
@@ -1780,8 +1884,10 @@ TEST_CASE(
 
     REQUIRE(response.status == 101);
     REQUIRE(response.accepted);
-    REQUIRE(observed_plans.size() == 1);
+    REQUIRE(observed_plans.size() == 2);
     REQUIRE(observed_plans[0].body.find("\"previous_response_id\":\"resp_stale_ws_guard_101\"") != std::string::npos);
+    REQUIRE(observed_plans[1].body.find("\"previous_response_id\"") == std::string::npos);
+    REQUIRE(response.frames[1].find("\"resp_guard_ws_recovered_101\"") != std::string::npos);
 }
 
 TEST_CASE(

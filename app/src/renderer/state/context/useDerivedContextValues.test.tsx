@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
-import { createInitialRuntimeState, routingModesSeed } from '../../test/fixtures/seed';
+import { accountsSeed, createInitialRuntimeState, routingModesSeed } from '../../test/fixtures/seed';
 import { defaultDashboardSettings } from '../hooks/useSettings';
 import type { TightropeModel } from './modelTypes';
 import {
@@ -49,6 +49,25 @@ describe('useDerivedContextValues', () => {
     expect(result.current.setSelectedAccountId).toBe(setSelectedAccountId);
     expect(result.current.setSelectedRoute).toBe(setSelectedRoute);
     expect(result.current.setInspectorOpen).toBe(setInspectorOpen);
+  });
+
+  test('useRouterDerivedContextValue prefers the runtime selected routed account', () => {
+    const state = createInitialRuntimeState();
+    state.currentRoutedAccountId = 'acc-night';
+
+    const model = {
+      state,
+      accounts: accountsSeed,
+      routingModes: routingModesSeed,
+      setSearchQuery: vi.fn(),
+      setSelectedAccountId: vi.fn(),
+      setSelectedRoute: vi.fn(),
+      setInspectorOpen: vi.fn(),
+    } as unknown as TightropeModel;
+
+    const { result } = renderHook(() => useRouterDerivedContextValue(model));
+
+    expect(result.current.routedAccountId).toBe('acc-night');
   });
 
   test('useSessionsContextValue paginates filtered sessions and maps pager actions', () => {

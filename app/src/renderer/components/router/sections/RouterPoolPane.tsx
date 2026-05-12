@@ -1,7 +1,12 @@
 import i18next from 'i18next';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { Account, RouteMetrics } from '../../../shared/types';
+import type { Account, ClusterStatus, RouteMetrics, StickySession } from '../../../shared/types';
+import {
+  AccountSessionChip,
+  CollaborationStatusPanel,
+  buildAccountSessionSummaries,
+} from '../../shared/CollaborationStatusPanel';
 import { RoutingPoolSortSelect, type RoutingPoolSortOption } from './RoutingPoolSortSelect';
 
 interface RouterPoolPaneProps {
@@ -9,6 +14,8 @@ interface RouterPoolPaneProps {
   metrics: Map<string, RouteMetrics>;
   routedAccountId: string | null;
   lockedRoutingAccountIds: string[];
+  sessions?: StickySession[];
+  clusterStatus?: ClusterStatus | null;
   recentRouteActivityByAccount: Map<string, number>;
   trafficNowMs: number;
   trafficActiveWindowMs: number;
@@ -16,6 +23,7 @@ interface RouterPoolPaneProps {
   onSelectAccount: (accountId: string) => void;
   onTogglePin: (accountId: string, nextPinned: boolean) => void;
   onUpdateLockedRoutingAccountIds: (accountIds: string[]) => Promise<boolean>;
+  onOpenSyncTopology?: () => void;
   onOpenAddAccount: () => void;
 }
 
@@ -336,6 +344,8 @@ export function RouterPoolPane({
   metrics,
   routedAccountId,
   lockedRoutingAccountIds,
+  sessions = [],
+  clusterStatus = null,
   recentRouteActivityByAccount,
   trafficNowMs,
   trafficActiveWindowMs,
@@ -343,6 +353,7 @@ export function RouterPoolPane({
   onSelectAccount,
   onTogglePin,
   onUpdateLockedRoutingAccountIds,
+  onOpenSyncTopology,
   onOpenAddAccount,
 }: RouterPoolPaneProps) {
   const { t } = useTranslation();
@@ -373,6 +384,7 @@ export function RouterPoolPane({
     [sortOptions, primarySortKey],
   );
   const accountsById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
+  const accountSessionSummaries = useMemo(() => buildAccountSessionSummaries(sessions), [sessions]);
   const lockGroupOrder = useMemo(() => {
     const order = new Map<string, number>();
     lockGroupAccountIds.forEach((accountId, index) => {
@@ -406,6 +418,14 @@ export function RouterPoolPane({
   const sortedAccounts = useMemo(() => {
     const next = [...accounts];
     next.sort((left, right) => {
+      if (routedAccountId) {
+        const leftRouted = left.id === routedAccountId;
+        const rightRouted = right.id === routedAccountId;
+        if (leftRouted !== rightRouted) {
+          return leftRouted ? -1 : 1;
+        }
+      }
+
       const leftAnchored = anchoredTopSet.has(left.id);
       const rightAnchored = anchoredTopSet.has(right.id);
       if (leftAnchored !== rightAnchored) {
@@ -434,7 +454,7 @@ export function RouterPoolPane({
       return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
     });
     return next;
-  }, [accounts, anchoredTopSet, lockGroupOrder, lockGroupTopBlockActive, sortKeys, trafficNowMs]);
+  }, [accounts, anchoredTopSet, lockGroupOrder, lockGroupTopBlockActive, routedAccountId, sortKeys, trafficNowMs]);
   const sortedAccountIdsKey = useMemo(() => sortedAccounts.map((account) => account.id).join(','), [sortedAccounts]);
 
   useEffect(() => {
@@ -770,6 +790,13 @@ export function RouterPoolPane({
         </button>
       </header>
       <div className="pane-body">
+        <CollaborationStatusPanel
+          accountsTotal={accounts.length}
+          sessions={sessions}
+          clusterStatus={clusterStatus}
+          variant="pool"
+          onOpenSyncTopology={onOpenSyncTopology}
+        />
         <div className="routing-pool-controls">
           <RoutingPoolSortSelect
             label={t('router.pool_sort_label')}
@@ -824,7 +851,7 @@ export function RouterPoolPane({
             </>
           ) : null}
         </div>
-        <span style={{ display: 'none' }}>{t('router.pool_routed_account')}: {accounts.find((account) => account.id === selectedAccountId)?.name ?? t('common.all')}</span>
+        <span style={{ display: 'none' }}>{t('router.pool_routed_account')}: {accounts.find((account) => account.id === routedAccountId)?.name ?? t('common.all')}</span>
         <div
           className={`accounts-list${lockGroupConnected ? ' lock-group-active' : ''}${lockGroupRoutingActive ? ' lock-group-routing-active' : ''}`}
           id="accountsList"
@@ -858,6 +885,7 @@ export function RouterPoolPane({
             const primaryRemaining = primaryUsage === null ? 0 : Math.max(0, 100 - primaryUsage);
             const secondaryUsage =
               account.telemetryBacked && account.plan !== 'free' && account.hasSecondaryQuota ? clampPercent(account.quotaSecondary) : null;
+            const accountSessionSummary = accountSessionSummaries.get(account.id);
             const secondaryRemaining = secondaryUsage === null ? 0 : Math.max(0, 100 - secondaryUsage);
             const recentRouteActive = isRecentRouteActive(account.id);
             const upActive =
@@ -911,6 +939,7 @@ export function RouterPoolPane({
                 <div className="account-top">
                   <span className="account-name" title={account.name}>{account.name}</span>
                   <div className="account-actions">
+                    <AccountSessionChip summary={accountSessionSummary} />
                     <button
                       type="button"
                       className={`account-info-btn${openTooltipAccountId === account.id ? ' active' : ''}`}

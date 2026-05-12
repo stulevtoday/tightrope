@@ -203,6 +203,7 @@ contextBridge.exposeInMainWorld('tightrope', {
   },
   listAccounts: () => ipcRenderer.invoke('accounts:list'),
   listStickySessions: (payload?: { limit?: number; offset?: number }) => ipcRenderer.invoke('sessions:list', payload),
+  purgeStaleSessions: () => ipcRenderer.invoke('sessions:purge-stale'),
   listRequestLogs: (payload?: { limit?: number; offset?: number }) => ipcRenderer.invoke('logs:list', payload),
   listAccountTraffic: () => ipcRenderer.invoke('accounts:traffic'),
   importAccount: (payload: unknown) => ipcRenderer.invoke('accounts:import', payload),

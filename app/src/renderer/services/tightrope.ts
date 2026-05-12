@@ -14,6 +14,7 @@ import type {
   RuntimeAccountTrafficResponse,
   RuntimeRequestLog,
   RuntimeRequestLogsResponse,
+  RuntimeStickySessionsPurgeResponse,
   RuntimeStickySessionsResponse,
   SqlImportApplyRequestPayload,
   SqlImportApplyResponse,
@@ -38,6 +39,7 @@ export interface TightropeService {
   oauthManualCallbackRequest: (callbackUrl: string) => Promise<ManualCallbackResponse>;
   listAccountsRequest: () => Promise<RuntimeAccount[]>;
   listStickySessionsRequest: (limit: number, offset: number) => Promise<RuntimeStickySessionsResponse>;
+  purgeStaleSessionsRequest: () => Promise<RuntimeStickySessionsPurgeResponse>;
   listRequestLogsRequest: (limit: number, offset: number) => Promise<RuntimeRequestLog[]>;
   listAccountTrafficRequest: () => Promise<RuntimeAccountTraffic[]>;
   backendStatusRequest: () => Promise<RuntimeBackendStateResponse>;
@@ -233,6 +235,16 @@ function coerceRuntimeStickySessionsResponse(value: unknown): RuntimeStickySessi
   return {
     generatedAtMs,
     sessions: sessions as RuntimeStickySessionsResponse['sessions'],
+  };
+}
+
+function coerceRuntimeStickySessionsPurgeResponse(value: unknown): RuntimeStickySessionsPurgeResponse {
+  if (!isObjectRecord(value)) {
+    return { generatedAtMs: Date.now(), purged: 0 };
+  }
+  return {
+    generatedAtMs: numberOrNull(value.generatedAtMs) ?? Date.now(),
+    purged: Math.max(0, Math.trunc(numberOrNull(value.purged) ?? 0)),
   };
 }
 
@@ -478,10 +490,30 @@ export async function listStickySessionsRequest(limit: number, offset: number): 
   const api = window.tightrope;
   if (api?.listStickySessions) {
     const response = await api.listStickySessions({ limit, offset });
+    if (isRuntimeErrorEnvelope(response)) {
+      const error = new Error(response.error.message) as Error & { code?: string };
+      error.code = response.error.code;
+      throw error;
+    }
     return coerceRuntimeStickySessionsResponse(response);
   }
   const response = await getJson<RuntimeStickySessionsResponse>(runtimeHttpUrl(`/api/sessions?limit=${limit}&offset=${offset}`));
   return coerceRuntimeStickySessionsResponse(response);
+}
+
+export async function purgeStaleSessionsRequest(): Promise<RuntimeStickySessionsPurgeResponse> {
+  const api = window.tightrope;
+  if (api?.purgeStaleSessions) {
+    const response = await api.purgeStaleSessions();
+    if (isRuntimeErrorEnvelope(response)) {
+      const error = new Error(response.error.message) as Error & { code?: string };
+      error.code = response.error.code;
+      throw error;
+    }
+    return coerceRuntimeStickySessionsPurgeResponse(response);
+  }
+  const response = await postJson<RuntimeStickySessionsPurgeResponse>(runtimeHttpUrl('/api/sessions/purge-stale'), {});
+  return coerceRuntimeStickySessionsPurgeResponse(response);
 }
 
 export async function listRequestLogsRequest(limit: number, offset: number): Promise<RuntimeRequestLog[]> {
@@ -883,6 +915,7 @@ export function createTightropeService(): TightropeService {
     oauthManualCallbackRequest,
     listAccountsRequest,
     listStickySessionsRequest,
+    purgeStaleSessionsRequest,
     listRequestLogsRequest,
     listAccountTrafficRequest,
     backendStatusRequest,

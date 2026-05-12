@@ -16,6 +16,7 @@ import { RequestDrawer } from './components/logs/RequestDrawer';
 import { RouterPage } from './components/router/RouterPage';
 import { SessionsPage } from './components/sessions/SessionsPage';
 import { SettingsPage } from './components/settings/SettingsPage';
+import { TracePage } from './components/trace/TracePage';
 import { AppStateProviders, useTightropeService } from './state/context';
 import type { TightropeService } from './services/tightrope';
 import type { AppMetaResponse } from './shared/types';
@@ -67,6 +68,8 @@ function AppShell() {
           <RouterToolbar />
 
           <RouterPage />
+
+          <TracePage />
 
           <AccountsPage />
 

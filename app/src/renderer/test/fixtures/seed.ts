@@ -209,6 +209,7 @@ export function createInitialRuntimeState(): AppRuntimeState {
     selectedAccountId: accountsSeed[0].id,
     selectedRouteId: rowsSeed[0].id,
     selectedAccountDetailId: null,
+    currentRoutedAccountId: null,
     searchQuery: '',
     routingMode: 'weighted_round_robin',
     roundRobinCursor: 0,

@@ -276,6 +276,7 @@ interface BuildSessionsOptionsInput {
   mapRuntimeStickySession: UseSessionsOptions['mapRuntimeStickySession'];
   clampSessionsOffset: (offset: number, totalCount: number, sessionsPageSize: number) => number;
   listStickySessionsRequest: UseSessionsOptions['listStickySessionsRequest'];
+  purgeStaleSessionsRequest: UseSessionsOptions['purgeStaleSessionsRequest'];
   pushRuntimeEvent: (text: string, level?: StatusNoticeLevel) => void;
 }
 
@@ -286,9 +287,11 @@ export function buildSessionsOptions(input: BuildSessionsOptionsInput): UseSessi
     setState: input.setState,
     mapRuntimeStickySession: input.mapRuntimeStickySession,
     listStickySessionsRequest: input.listStickySessionsRequest,
+    purgeStaleSessionsRequest: input.purgeStaleSessionsRequest,
     clampSessionsOffset: (offset: number, totalCount: number) =>
       input.clampSessionsOffset(offset, totalCount, input.sessionsPageSize),
     reportPollingError: (message: string) => input.pushRuntimeEvent(message, 'warn'),
+    reportPurgeError: (message: string) => input.pushRuntimeEvent(message, 'warn'),
   };
 }
 

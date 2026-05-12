@@ -1,9 +1,17 @@
 import i18next from 'i18next';
 import { useTranslation } from 'react-i18next';
-import type { Account } from '../../shared/types';
+import type { Account, ClusterStatus, StickySession } from '../../shared/types';
+import {
+  CollaborationStatusPanel,
+  type AccountSessionSummary,
+} from '../shared/CollaborationStatusPanel';
 
 interface AccountDetailPanelProps {
   selectedAccountDetail: Account | null;
+  accountsTotal: number;
+  sessions: StickySession[];
+  clusterStatus: ClusterStatus | null | undefined;
+  accountSessionSummary?: AccountSessionSummary | null;
   accountUsage24h: {
     requests: number;
     tokens: number;
@@ -21,6 +29,7 @@ interface AccountDetailPanelProps {
   onPauseAccount: () => void;
   onReactivateAccount: () => void;
   onDeleteAccount: () => void;
+  onOpenSyncTopology?: () => void;
 }
 
 const DAY_SECONDS = 24 * 60 * 60;
@@ -196,6 +205,10 @@ function usageResetLabel(resetAtMs: number | null): string {
 
 export function AccountDetailPanel({
   selectedAccountDetail,
+  accountsTotal,
+  sessions,
+  clusterStatus,
+  accountSessionSummary = null,
   accountUsage24h,
   stableSparklinePercents,
   formatNumber,
@@ -208,6 +221,7 @@ export function AccountDetailPanel({
   onPauseAccount,
   onReactivateAccount,
   onDeleteAccount,
+  onOpenSyncTopology,
 }: AccountDetailPanelProps) {
   const { t } = useTranslation();
   const detail = selectedAccountDetail;
@@ -245,6 +259,15 @@ export function AccountDetailPanel({
         </div>
       </header>
       <div className="detail-content">
+        <CollaborationStatusPanel
+          accountsTotal={accountsTotal}
+          sessions={sessions}
+          clusterStatus={clusterStatus}
+          accountSessionSummary={accountSessionSummary}
+          selectedAccountName={detail?.name ?? null}
+          variant="detail"
+          onOpenSyncTopology={onOpenSyncTopology}
+        />
         {!detail ? (
           <div className="empty-detail">
             <strong>{t('accounts.detail_select_account')}</strong>

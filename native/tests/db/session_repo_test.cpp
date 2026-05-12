@@ -81,6 +81,8 @@ TEST_CASE("response continuity repository persists scoped response snapshots", "
     sqlite3* db = nullptr;
     REQUIRE(sqlite3_open_v2(db_path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) == SQLITE_OK);
     REQUIRE(db != nullptr);
+    const std::string recovery_input_json =
+        R"([{"role":"user","content":[{"type":"input_text","text":"turn a"}]}])";
 
     REQUIRE(tightrope::db::ensure_proxy_response_continuity_schema(db));
     REQUIRE(tightrope::db::upsert_proxy_response_continuity(
@@ -99,7 +101,8 @@ TEST_CASE("response continuity repository persists scoped response snapshots", "
         "resp-a-2",
         "acc-a",
         /*now_ms=*/1200,
-        /*ttl_ms=*/500
+        /*ttl_ms=*/500,
+        recovery_input_json
     ));
     REQUIRE(tightrope::db::upsert_proxy_response_continuity(
         db,
@@ -116,6 +119,13 @@ TEST_CASE("response continuity repository persists scoped response snapshots", "
     REQUIRE(latest_for_key_a.has_value());
     REQUIRE(latest_for_key_a->response_id == "resp-a-2");
     REQUIRE(latest_for_key_a->account_id == "acc-a");
+    REQUIRE(latest_for_key_a->recovery_input_json == recovery_input_json);
+
+    const auto record_for_response =
+        tightrope::db::find_proxy_response_continuity_by_response_id(db, "resp-a-2", "api-key-a", /*now_ms=*/1300);
+    REQUIRE(record_for_response.has_value());
+    REQUIRE(record_for_response->continuity_key == "turn-1");
+    REQUIRE(record_for_response->recovery_input_json == recovery_input_json);
 
     const auto account_for_key_a =
         tightrope::db::find_proxy_response_continuity_account(db, "resp-a-2", "api-key-a", /*now_ms=*/1300);
@@ -130,7 +140,14 @@ TEST_CASE("response continuity repository persists scoped response snapshots", "
         tightrope::db::find_proxy_response_continuity_account(db, "resp-a-2", "", /*now_ms=*/1300);
     REQUIRE_FALSE(account_without_scope.has_value());
 
-    REQUIRE(tightrope::db::purge_expired_proxy_response_continuity(db, /*now_ms=*/1800) == 3);
+    REQUIRE(tightrope::db::purge_proxy_response_continuity_for_account(db, "acc-a") == 2);
+    REQUIRE_FALSE(tightrope::db::find_proxy_response_continuity_by_response_id(
+        db,
+        "resp-a-2",
+        "api-key-a",
+        /*now_ms=*/1300
+    ));
+    REQUIRE(tightrope::db::purge_expired_proxy_response_continuity(db, /*now_ms=*/1800) == 1);
     REQUIRE(tightrope::db::find_proxy_response_continuity(db, "turn-1", "api-key-a", /*now_ms=*/1800) == std::nullopt);
 
     sqlite3_close(db);

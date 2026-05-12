@@ -3,7 +3,7 @@ export type AccountHealth = 'healthy' | 'strained';
 export type AccountState = 'active' | 'paused' | 'rate_limited' | 'deactivated' | 'quota_blocked';
 export type RowStatus = 'ok' | 'warn' | 'error';
 export type Protocol = 'SSE' | 'WS' | 'Compact' | 'Transcribe';
-export type AppPage = 'router' | 'accounts' | 'sessions' | 'logs' | 'settings';
+export type AppPage = 'router' | 'trace' | 'accounts' | 'sessions' | 'logs' | 'settings';
 export type AddAccountStep = 'stepMethod' | 'stepImport' | 'stepBrowser' | 'stepDevice' | 'stepSuccess' | 'stepError';
 export type RouterRuntimeState = 'running' | 'paused' | 'degraded' | 'stopped';
 export type SessionKind = 'codex_session' | 'sticky_thread' | 'prompt_cache';
@@ -151,6 +151,7 @@ export interface AppRuntimeState {
   selectedAccountId: string;
   selectedRouteId: string;
   selectedAccountDetailId: string | null;
+  currentRoutedAccountId: string | null;
   searchQuery: string;
   routingMode: string;
   roundRobinCursor: number;
@@ -367,6 +368,11 @@ export interface RuntimeStickySession {
 export interface RuntimeStickySessionsResponse {
   generatedAtMs: number;
   sessions: RuntimeStickySession[];
+}
+
+export interface RuntimeStickySessionsPurgeResponse {
+  generatedAtMs: number;
+  purged: number;
 }
 
 export interface RuntimeRequestLog {
@@ -596,6 +602,7 @@ export interface ElectronApi {
   onAboutOpen: (listener: () => void) => () => void;
   listAccounts: () => Promise<RuntimeAccountsListResponse>;
   listStickySessions: (payload?: { limit?: number; offset?: number }) => Promise<RuntimeStickySessionsResponse>;
+  purgeStaleSessions: () => Promise<RuntimeStickySessionsPurgeResponse>;
   listRequestLogs: (payload?: { limit?: number; offset?: number }) => Promise<RuntimeRequestLogsResponse>;
   listAccountTraffic: () => Promise<RuntimeAccountTrafficResponse>;
   importAccount: (payload: { email: string; provider: string; access_token?: string; refresh_token?: string }) => Promise<RuntimeAccount>;

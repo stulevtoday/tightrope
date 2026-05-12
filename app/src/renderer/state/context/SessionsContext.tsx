@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 import type { StickySession } from '../../shared/types';
 
 export interface SessionsContextValue {
+  sessions: StickySession[];
   sessionsKindFilter: StickySession['kind'] | 'all';
   sessionsView: { filtered: StickySession[]; paged: StickySession[]; staleTotal: number };
   sessionsPaginationLabel: string;

@@ -163,6 +163,50 @@ describe('RouterPoolPane lock selection', () => {
     expect(row).toHaveTextContent(/Weekly left/i);
   });
 
+  test('moves the currently routed account above the configured sort order', () => {
+    const nowMs = 1_700_000_000_000;
+    const accounts = [
+      makeAccount('acc_alpha', 'alpha@test.local', {
+        telemetryBacked: true,
+        hasPrimaryQuota: true,
+        quotaPrimaryResetAtMs: nowMs + 10 * 60 * 1000,
+      }),
+      makeAccount('acc_bravo', 'bravo@test.local', {
+        telemetryBacked: true,
+        hasPrimaryQuota: true,
+        quotaPrimaryResetAtMs: nowMs + 3 * 60 * 60 * 1000,
+      }),
+      makeAccount('acc_charlie', 'charlie@test.local', {
+        telemetryBacked: true,
+        hasPrimaryQuota: true,
+        quotaPrimaryResetAtMs: nowMs + 20 * 60 * 1000,
+      }),
+    ];
+
+    const { container } = render(
+      <RouterPoolPane
+        accounts={accounts}
+        metrics={new Map<string, RouteMetrics>()}
+        routedAccountId="acc_bravo"
+        lockedRoutingAccountIds={[]}
+        recentRouteActivityByAccount={new Map<string, number>()}
+        trafficNowMs={nowMs}
+        trafficActiveWindowMs={30_000}
+        selectedAccountId="acc_alpha"
+        onSelectAccount={vi.fn()}
+        onTogglePin={vi.fn()}
+        onUpdateLockedRoutingAccountIds={vi.fn(async () => true)}
+        onOpenAddAccount={vi.fn()}
+      />,
+    );
+
+    expect(accountListOrder(container)).toEqual([
+      'bravo@test.local',
+      'alpha@test.local',
+      'charlie@test.local',
+    ]);
+  });
+
   test(
     'delays moving a newly formed lock group to the top by 5 seconds',
     async () => {

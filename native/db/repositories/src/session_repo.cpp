@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS proxy_response_continuity (
     api_key_scope TEXT NOT NULL DEFAULT '',
     response_id TEXT NOT NULL,
     account_id TEXT NOT NULL DEFAULT '',
+    recovery_input_json TEXT NOT NULL DEFAULT '',
     updated_at_ms INTEGER NOT NULL,
     expires_at_ms INTEGER NOT NULL,
     PRIMARY KEY(response_id, api_key_scope)
@@ -47,6 +48,8 @@ CREATE INDEX IF NOT EXISTS idx_proxy_response_continuity_key_scope_updated
 CREATE INDEX IF NOT EXISTS idx_proxy_response_continuity_expires_at
     ON proxy_response_continuity(expires_at_ms);
 )SQL";
+constexpr const char* kEnsureProxyResponseContinuityRecoveryInputColumnSql =
+    "ALTER TABLE proxy_response_continuity ADD COLUMN recovery_input_json TEXT NOT NULL DEFAULT '';";
 
 bool ensure_schema(SQLite::Database& db) noexcept {
     return sqlite_repo_utils::exec_sql(db, kEnsureProxyStickySchemaSql.data()) &&
@@ -67,7 +70,13 @@ std::string normalize_sticky_session_kind(std::string_view kind) {
 }
 
 bool ensure_response_continuity_schema(SQLite::Database& db) noexcept {
-    return sqlite_repo_utils::exec_sql(db, kEnsureProxyResponseContinuitySchemaSql.data());
+    return sqlite_repo_utils::exec_sql(db, kEnsureProxyResponseContinuitySchemaSql.data()) &&
+           sqlite_repo_utils::ensure_column(
+               db,
+               "proxy_response_continuity",
+               "recovery_input_json",
+               kEnsureProxyResponseContinuityRecoveryInputColumnSql
+           );
 }
 
 } // namespace
@@ -250,7 +259,8 @@ bool upsert_proxy_response_continuity(
     const std::string_view response_id,
     const std::string_view account_id,
     const std::int64_t now_ms,
-    const std::int64_t ttl_ms
+    const std::int64_t ttl_ms,
+    const std::string_view recovery_input_json
 ) noexcept {
     auto handle = sqlite_repo_utils::resolve_database(db);
     if (!handle.valid() || continuity_key.empty() || response_id.empty() || !ensure_response_continuity_schema(*handle.db)) {
@@ -263,13 +273,18 @@ INSERT INTO proxy_response_continuity(
     api_key_scope,
     response_id,
     account_id,
+    recovery_input_json,
     updated_at_ms,
     expires_at_ms
 )
-VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
 ON CONFLICT(response_id, api_key_scope) DO UPDATE SET
     continuity_key = excluded.continuity_key,
     account_id = excluded.account_id,
+    recovery_input_json = CASE
+        WHEN excluded.recovery_input_json != '' THEN excluded.recovery_input_json
+        ELSE proxy_response_continuity.recovery_input_json
+    END,
     updated_at_ms = excluded.updated_at_ms,
     expires_at_ms = excluded.expires_at_ms;
 )SQL";
@@ -283,8 +298,9 @@ ON CONFLICT(response_id, api_key_scope) DO UPDATE SET
         stmt.bind(2, std::string(api_key_scope));
         stmt.bind(3, std::string(response_id));
         stmt.bind(4, std::string(account_id));
-        stmt.bind(5, now_ms);
-        stmt.bind(6, expires_at_ms);
+        stmt.bind(5, std::string(recovery_input_json));
+        stmt.bind(6, now_ms);
+        stmt.bind(7, expires_at_ms);
         return stmt.exec() > 0;
     } catch (...) {
         return false;
@@ -303,7 +319,7 @@ std::optional<ProxyResponseContinuityRecord> find_proxy_response_continuity(
     }
 
     constexpr const char* kSql = R"SQL(
-SELECT continuity_key, api_key_scope, response_id, account_id, updated_at_ms, expires_at_ms
+SELECT continuity_key, api_key_scope, response_id, account_id, recovery_input_json, updated_at_ms, expires_at_ms
 FROM proxy_response_continuity
 WHERE continuity_key = ?1
   AND api_key_scope = ?2
@@ -335,10 +351,73 @@ LIMIT 1;
             record.account_id = stmt.getColumn(3).getString();
         }
         if (!stmt.getColumn(4).isNull()) {
-            record.updated_at_ms = stmt.getColumn(4).getInt64();
+            record.recovery_input_json = stmt.getColumn(4).getString();
         }
         if (!stmt.getColumn(5).isNull()) {
-            record.expires_at_ms = stmt.getColumn(5).getInt64();
+            record.updated_at_ms = stmt.getColumn(5).getInt64();
+        }
+        if (!stmt.getColumn(6).isNull()) {
+            record.expires_at_ms = stmt.getColumn(6).getInt64();
+        }
+        if (record.continuity_key.empty() || record.response_id.empty()) {
+            return std::nullopt;
+        }
+        return record;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+std::optional<ProxyResponseContinuityRecord> find_proxy_response_continuity_by_response_id(
+    sqlite3* db,
+    const std::string_view response_id,
+    const std::string_view api_key_scope,
+    const std::int64_t now_ms
+) noexcept {
+    auto handle = sqlite_repo_utils::resolve_database(db);
+    if (!handle.valid() || response_id.empty() || !ensure_response_continuity_schema(*handle.db)) {
+        return std::nullopt;
+    }
+
+    constexpr const char* kSql = R"SQL(
+SELECT continuity_key, api_key_scope, response_id, account_id, recovery_input_json, updated_at_ms, expires_at_ms
+FROM proxy_response_continuity
+WHERE response_id = ?1
+  AND api_key_scope = ?2
+  AND expires_at_ms > ?3
+LIMIT 1;
+)SQL";
+
+    try {
+        SQLite::Statement stmt(*handle.db, kSql);
+        stmt.bind(1, std::string(response_id));
+        stmt.bind(2, std::string(api_key_scope));
+        stmt.bind(3, now_ms);
+        if (!stmt.executeStep()) {
+            return std::nullopt;
+        }
+
+        ProxyResponseContinuityRecord record;
+        if (!stmt.getColumn(0).isNull()) {
+            record.continuity_key = stmt.getColumn(0).getString();
+        }
+        if (!stmt.getColumn(1).isNull()) {
+            record.api_key_scope = stmt.getColumn(1).getString();
+        }
+        if (!stmt.getColumn(2).isNull()) {
+            record.response_id = stmt.getColumn(2).getString();
+        }
+        if (!stmt.getColumn(3).isNull()) {
+            record.account_id = stmt.getColumn(3).getString();
+        }
+        if (!stmt.getColumn(4).isNull()) {
+            record.recovery_input_json = stmt.getColumn(4).getString();
+        }
+        if (!stmt.getColumn(5).isNull()) {
+            record.updated_at_ms = stmt.getColumn(5).getInt64();
+        }
+        if (!stmt.getColumn(6).isNull()) {
+            record.expires_at_ms = stmt.getColumn(6).getInt64();
         }
         if (record.continuity_key.empty() || record.response_id.empty()) {
             return std::nullopt;
@@ -396,6 +475,23 @@ std::size_t purge_expired_proxy_response_continuity(sqlite3* db, const std::int6
     try {
         SQLite::Statement stmt(*handle.db, kSql);
         stmt.bind(1, now_ms);
+        (void)stmt.exec();
+        return static_cast<std::size_t>(handle.db->getChanges());
+    } catch (...) {
+        return 0;
+    }
+}
+
+std::size_t purge_proxy_response_continuity_for_account(sqlite3* db, const std::string_view account_id) noexcept {
+    auto handle = sqlite_repo_utils::resolve_database(db);
+    if (!handle.valid() || account_id.empty() || !ensure_response_continuity_schema(*handle.db)) {
+        return 0;
+    }
+
+    constexpr const char* kSql = "DELETE FROM proxy_response_continuity WHERE account_id = ?1;";
+    try {
+        SQLite::Statement stmt(*handle.db, kSql);
+        stmt.bind(1, std::string(account_id));
         (void)stmt.exec();
         return static_cast<std::size_t>(handle.db->getChanges());
     } catch (...) {
