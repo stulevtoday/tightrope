@@ -2,9 +2,12 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const { spawn, spawnSync } = require('node:child_process');
 
 const appDir = path.resolve(__dirname, '..');
+const repoRoot = path.resolve(appDir, '..');
+const nativeModuleFilename = 'tightrope-core.node';
 
 // On Windows, Electron loads tightrope-core.node via LoadLibrary which locks the
 // file against writes AND against re-loading from a different process instance.
@@ -49,7 +52,103 @@ function killStaleTightropeElectronProcesses() {
   }
 }
 
+function uniquePaths(paths) {
+  return Array.from(new Set(paths.map((candidate) => path.resolve(candidate))));
+}
+
+function pathHasSegment(candidate, segment) {
+  const normalizedSegment = segment.toLowerCase();
+  return path
+    .normalize(candidate)
+    .split(path.sep)
+    .some((part) => part.toLowerCase() === normalizedSegment);
+}
+
+function walkNativeModuleOutputs(rootDir, config, out = []) {
+  if (!fs.existsSync(rootDir)) {
+    return out;
+  }
+
+  const entries = fs.readdirSync(rootDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      if (
+        entry.name === '.git' ||
+        entry.name === 'node_modules' ||
+        entry.name === 'vcpkg_installed' ||
+        entry.name === 'dist'
+      ) {
+        continue;
+      }
+      walkNativeModuleOutputs(fullPath, config, out);
+      continue;
+    }
+
+    if (entry.name.toLowerCase() !== nativeModuleFilename) {
+      continue;
+    }
+
+    const relativeOutputPath = path.relative(rootDir, fullPath);
+    if (
+      config === 'Debug'
+        ? pathHasSegment(relativeOutputPath, 'Release')
+        : pathHasSegment(relativeOutputPath, 'Debug')
+    ) {
+      continue;
+    }
+
+    out.push(fullPath);
+  }
+
+  return out;
+}
+
+function nativeModuleCandidates() {
+  const buildMode = process.platform === 'win32' ? 'release' : 'debug';
+  const buildDir = buildMode === 'debug' ? 'build-electron-debug' : 'build';
+  const config = buildMode === 'debug' ? 'Debug' : 'Release';
+  const buildRoots = uniquePaths([path.join(repoRoot, buildDir), path.join(appDir, buildDir)]);
+
+  return uniquePaths([
+    path.join(repoRoot, buildDir, config, nativeModuleFilename),
+    path.join(repoRoot, buildDir, nativeModuleFilename),
+    path.join(appDir, buildDir, config, nativeModuleFilename),
+    path.join(appDir, buildDir, nativeModuleFilename),
+    ...buildRoots.flatMap((root) => walkNativeModuleOutputs(root, config)),
+  ]);
+}
+
+function assertNativeModuleAvailable() {
+  if (process.env.TIGHTROPE_DISABLE_NATIVE === '1') {
+    return;
+  }
+
+  const candidates = nativeModuleCandidates();
+  if (candidates.some((candidate) => fs.existsSync(candidate))) {
+    return;
+  }
+
+  const preview = candidates
+    .slice(0, 8)
+    .map((candidate) => path.relative(appDir, candidate))
+    .join(', ');
+  const suffix = candidates.length > 8 ? `, ... ${candidates.length - 8} more` : '';
+
+  console.error(
+    `[dev:electron] ${nativeModuleFilename} is missing after ensure:native:debug; Electron was not started.`
+  );
+  console.error(`[dev:electron] Searched: ${preview}${suffix}`);
+  console.error(
+    '[dev:electron] Run `npm run ensure:native:debug` from app and fix the native build error. ' +
+      'If Electron headers still download under a non-ASCII Windows profile, set ' +
+      '`TIGHTROPE_CMAKE_JS_CACHE_ROOT` to an ASCII path such as C:\\tools\\.cmake-js.'
+  );
+  process.exit(1);
+}
+
 killStaleTightropeElectronProcesses();
+assertNativeModuleAvailable();
 
 let electronBinary;
 try {

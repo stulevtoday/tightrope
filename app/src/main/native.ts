@@ -410,22 +410,32 @@ function loadNative(): NativeModule {
   // HTTP server ever starts. Crash loudly instead so the developer sees it.
   const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
   if (loadError) {
+    if (isDev) {
+      console.error(
+        '[tightrope] native module load failed. Dev startup requires a working native module. ' +
+          'If this is Windows and the cause is "being used by another process", a stale ' +
+          'electron.exe from a previous dev run is holding tightrope-core.node. ' +
+          'Kill it (Task Manager, or `taskkill /F /IM electron.exe`) and retry. ' +
+          'Set TIGHTROPE_DISABLE_NATIVE=1 only when you explicitly want stub mode.',
+        loadError
+      );
+      throw loadError;
+    }
     const message =
       '[tightrope] native module load failed — running with stubs. ' +
       'If this is Windows and the cause is "being used by another process", a stale ' +
       'electron.exe from a previous dev run is holding tightrope-core.node. ' +
       'Kill it (Task Manager, or `taskkill /F /IM electron.exe`) and retry.';
-    if (isDev) {
-      console.error(message, loadError);
-      throw loadError;
-    }
     console.warn(message, loadError);
   } else {
-    const message = '[tightrope] native module not found — running with stubs';
     if (isDev) {
-      console.error(message);
+      console.error(
+        '[tightrope] native module not found. Dev startup requires tightrope-core.node; ' +
+          'run `npm run ensure:native:debug` or set TIGHTROPE_DISABLE_NATIVE=1 to use stubs.'
+      );
       throw new Error('native module not found');
     }
+    const message = '[tightrope] native module not found — running with stubs';
     console.warn(message);
   }
 

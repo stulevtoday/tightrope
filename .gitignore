@@ -9,6 +9,7 @@ out/
 release/
 
 # Native build/cache outputs
+.cmake-js/
 CMakeCache.txt
 CMakeFiles/
 cmake-build-*/

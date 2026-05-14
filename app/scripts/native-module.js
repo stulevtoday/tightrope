@@ -50,6 +50,26 @@ const relatedNativeArtifactFilenames = new Set([
   'tightrope-core.node.pdb',
 ]);
 
+function sanitizeCachePathComponent(value) {
+  return String(value).replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+function resolveCmakeJsRuntimeDirectory(electronVersion) {
+  if (process.env.TIGHTROPE_CMAKE_JS_RUNTIME_DIR) {
+    return path.resolve(process.env.TIGHTROPE_CMAKE_JS_RUNTIME_DIR);
+  }
+
+  const cacheRoot = process.env.TIGHTROPE_CMAKE_JS_CACHE_ROOT
+    ? path.resolve(process.env.TIGHTROPE_CMAKE_JS_CACHE_ROOT)
+    : path.join(repoRoot, '.cmake-js');
+
+  return path.join(
+    cacheRoot,
+    `electron-${sanitizeCachePathComponent(process.arch)}`,
+    `v${sanitizeCachePathComponent(electronVersion)}`
+  );
+}
+
 function uniquePaths(paths) {
   return Array.from(new Set(paths.map((candidate) => path.resolve(candidate))));
 }
@@ -448,11 +468,14 @@ function loadCmakeJsBuildSystem() {
 async function resolveCmakeCommands(electronVersion, cmakeOptions) {
   const BuildSystem = loadCmakeJsBuildSystem();
   const outDir = path.resolve(appDir, cmakeOutDir);
+  const runtimeDirectory = resolveCmakeJsRuntimeDirectory(electronVersion);
+  console.log(`[native] Electron headers cache: ${path.relative(appDir, runtimeDirectory) || runtimeDirectory}`);
   const buildSystem = new BuildSystem({
     directory: repoRoot,
     out: outDir,
     runtime: 'electron',
     runtimeVersion: electronVersion,
+    runtimeDirectory,
     config: cmakeConfig,
     cMakeOptions: cmakeOptions,
     target: nativeModuleTarget,
