@@ -37,6 +37,14 @@ const cmakeConfig = effectiveBuildMode === 'debug' ? 'Debug' : 'Release';
 const cmakeOutDir = effectiveBuildMode === 'debug' ? '../build-electron-debug' : '../build';
 const nativeModuleFilename = 'tightrope-core.node';
 const windowsNativeDllFilename = 'tightrope-core.dll';
+const relatedNativeArtifactFilenames = new Set([
+  nativeModuleFilename,
+  windowsNativeDllFilename,
+  `${nativeModuleFilename}.dll`,
+  'tightrope-core.lib',
+  'tightrope-core.exp',
+  'tightrope-core.pdb',
+]);
 
 function uniquePaths(paths) {
   return Array.from(new Set(paths.map((candidate) => path.resolve(candidate))));
@@ -97,7 +105,10 @@ function normalizeWindowsDllOutputs() {
     return [];
   }
 
-  const dllOutputs = discoverNativeArtifactsForMode(windowsNativeDllFilename);
+  const dllOutputs = uniquePaths([
+    ...discoverNativeArtifactsForMode(windowsNativeDllFilename),
+    ...discoverNativeArtifactsForMode(`${nativeModuleFilename}.dll`),
+  ]);
   const nodeOutputs = [];
   for (const dllPath of dllOutputs) {
     const nodePath = path.join(path.dirname(dllPath), nativeModuleFilename);
@@ -112,7 +123,7 @@ function normalizeWindowsDllOutputs() {
 function nativeArtifactDiagnostics() {
   return nativeModuleBuildRootsForMode()
     .flatMap((root) =>
-      walkFiles(root, (fullPath) => /^tightrope-core\.(node|dll|lib|pdb)$/i.test(path.basename(fullPath)))
+      walkFiles(root, (fullPath) => relatedNativeArtifactFilenames.has(path.basename(fullPath).toLowerCase()))
     )
     .sort();
 }
@@ -170,8 +181,7 @@ function walkFiles(rootDir, filter, out = []) {
       if (
         entry.name === '.git' ||
         entry.name === 'node_modules' ||
-        entry.name === 'build' ||
-        entry.name === 'build-debug' ||
+        entry.name === 'vcpkg_installed' ||
         entry.name === 'dist'
       ) {
         continue;
@@ -350,6 +360,22 @@ function buildSpawnEnv() {
   return env;
 }
 
+function runCmakeJs(command, cmakeJsCli, cmakeArgs) {
+  const result = spawnSync(process.execPath, [cmakeJsCli, command, ...cmakeArgs], {
+    cwd: appDir,
+    stdio: 'inherit',
+    env: buildSpawnEnv(),
+  });
+
+  if (typeof result.status === 'number' && result.status !== 0) {
+    process.exit(result.status);
+  }
+
+  if (result.error) {
+    throw result.error;
+  }
+}
+
 function pruneStaleWindowsBuildDir(buildDir) {
   // On Windows, an aborted cmake-js configure can leave behind a CMakeCache.txt
   // without the generated *.vcxproj files. cmake-js then skips configure on the
@@ -392,7 +418,6 @@ function runBuild() {
     (fs.existsSync(defaultToolchainPath) ? '../vcpkg/scripts/buildsystems/vcpkg.cmake' : null);
 
   const cmakeArgs = [
-    'build',
     '-d',
     '..',
     '--out',
@@ -423,24 +448,14 @@ function runBuild() {
     cmakeArgs.push('--CDCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL');
   }
 
-  const command = process.execPath;
-  const commandArgs = [cmakeJsCli, ...cmakeArgs];
   console.log(
-    `[native] Building tightrope-core.node (${effectiveBuildMode} mode; node ${path.relative(appDir, cmakeJsCli)} ${cmakeArgs.join(' ')})`
+    `[native] Configuring tightrope-core.node (${effectiveBuildMode} mode; node ${path.relative(appDir, cmakeJsCli)} configure ${cmakeArgs.join(' ')})`
   );
-  const result = spawnSync(command, commandArgs, {
-    cwd: appDir,
-    stdio: 'inherit',
-    env: buildSpawnEnv(),
-  });
-
-  if (typeof result.status === 'number' && result.status !== 0) {
-    process.exit(result.status);
-  }
-
-  if (result.error) {
-    throw result.error;
-  }
+  runCmakeJs('configure', cmakeJsCli, cmakeArgs);
+  console.log(
+    `[native] Building tightrope-core.node (${effectiveBuildMode} mode; node ${path.relative(appDir, cmakeJsCli)} build ${cmakeArgs.join(' ')})`
+  );
+  runCmakeJs('build', cmakeJsCli, cmakeArgs);
 
   let builtOutputs = existingModulePaths();
   if (builtOutputs.length === 0) {
