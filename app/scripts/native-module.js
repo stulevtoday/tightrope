@@ -465,21 +465,45 @@ function loadCmakeJsBuildSystem() {
   return require(path.join(appDir, 'node_modules', 'cmake-js')).BuildSystem;
 }
 
+function withCmakeJsRuntimeDirectory(runtimeDirectory, callback) {
+  const key = 'npm_config_nodedir';
+  const previous = process.env[key];
+  process.env[key] = runtimeDirectory;
+  try {
+    return callback();
+  } finally {
+    if (typeof previous === 'undefined') {
+      delete process.env[key];
+    } else {
+      process.env[key] = previous;
+    }
+  }
+}
+
 async function resolveCmakeCommands(electronVersion, cmakeOptions) {
   const BuildSystem = loadCmakeJsBuildSystem();
   const outDir = path.resolve(appDir, cmakeOutDir);
   const runtimeDirectory = resolveCmakeJsRuntimeDirectory(electronVersion);
   console.log(`[native] Electron headers cache: ${path.relative(appDir, runtimeDirectory) || runtimeDirectory}`);
-  const buildSystem = new BuildSystem({
-    directory: repoRoot,
-    out: outDir,
-    runtime: 'electron',
-    runtimeVersion: electronVersion,
+
+  // cmake-js 7.x overwrites options.runtimeDirectory with npm_config_nodedir
+  // whenever any npm_config_* variable exists. npm run always provides such
+  // variables, so seed nodedir explicitly to keep downloads out of localized
+  // Windows profile paths that may contain non-ASCII characters.
+  const buildSystem = withCmakeJsRuntimeDirectory(
     runtimeDirectory,
-    config: cmakeConfig,
-    cMakeOptions: cmakeOptions,
-    target: nativeModuleTarget,
-  });
+    () =>
+      new BuildSystem({
+        directory: repoRoot,
+        out: outDir,
+        runtime: 'electron',
+        runtimeVersion: electronVersion,
+        runtimeDirectory,
+        config: cmakeConfig,
+        cMakeOptions: cmakeOptions,
+        target: nativeModuleTarget,
+      })
+  );
 
   return {
     outDir,
