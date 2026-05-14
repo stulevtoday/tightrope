@@ -35,6 +35,7 @@ const cmakeConfig = effectiveBuildMode === 'debug' ? 'Debug' : 'Release';
 // Debug must stay isolated in build-electron-debug (do NOT reuse build-debug, which is
 // used by non-cmake-js/test builds and can produce incompatible addon binaries).
 const cmakeOutDir = effectiveBuildMode === 'debug' ? '../build-electron-debug' : '../build';
+const nativeModuleTarget = 'tightrope-core';
 const nativeModuleFilename = 'tightrope-core.node';
 const windowsNativeDllFilename = 'tightrope-core.dll';
 const relatedNativeArtifactFilenames = new Set([
@@ -44,6 +45,9 @@ const relatedNativeArtifactFilenames = new Set([
   'tightrope-core.lib',
   'tightrope-core.exp',
   'tightrope-core.pdb',
+  'tightrope-core.node.lib',
+  'tightrope-core.node.exp',
+  'tightrope-core.node.pdb',
 ]);
 
 function uniquePaths(paths) {
@@ -120,10 +124,18 @@ function normalizeWindowsDllOutputs() {
   return nodeOutputs;
 }
 
+function isRelatedNativeArtifactFilename(filename) {
+  const normalized = filename.toLowerCase();
+  return (
+    relatedNativeArtifactFilenames.has(normalized) ||
+    /^tightrope-core\..+\.(dll|exp|lib|node|pdb)$/i.test(normalized)
+  );
+}
+
 function nativeArtifactDiagnostics() {
   return nativeModuleBuildRootsForMode()
     .flatMap((root) =>
-      walkFiles(root, (fullPath) => relatedNativeArtifactFilenames.has(path.basename(fullPath).toLowerCase()))
+      walkFiles(root, (fullPath) => isRelatedNativeArtifactFilename(path.basename(fullPath)))
     )
     .sort();
 }
@@ -360,9 +372,21 @@ function buildSpawnEnv() {
   return env;
 }
 
-function runCmakeJs(command, cmakeJsCli, cmakeArgs) {
-  const result = spawnSync(process.execPath, [cmakeJsCli, command, ...cmakeArgs], {
-    cwd: appDir,
+function formatCommand(command) {
+  return command
+    .map((arg) => {
+      const value = String(arg);
+      if (/^[A-Za-z0-9_./:=+\-\\$<>]+$/.test(value)) {
+        return value;
+      }
+      return `"${value.replace(/(["\\])/g, '\\$1')}"`;
+    })
+    .join(' ');
+}
+
+function runCommand(command, options = {}) {
+  const result = spawnSync(command[0], command.slice(1), {
+    cwd: options.cwd || appDir,
     stdio: 'inherit',
     env: buildSpawnEnv(),
   });
@@ -374,6 +398,71 @@ function runCmakeJs(command, cmakeJsCli, cmakeArgs) {
   if (result.error) {
     throw result.error;
   }
+
+  if (result.signal) {
+    throw new Error(`${command[0]} terminated by signal ${result.signal}`);
+  }
+}
+
+function resolveCmakeOptions(triplet, overlayTriplets) {
+  const toolchainFileFromEnv = process.env.CMAKE_TOOLCHAIN_FILE;
+  const defaultToolchainPath = path.join(repoRoot, 'vcpkg', 'scripts', 'buildsystems', 'vcpkg.cmake');
+  const toolchainFile =
+    toolchainFileFromEnv || (fs.existsSync(defaultToolchainPath) ? defaultToolchainPath : null);
+
+  const cmakeOptions = {
+    VCPKG_TARGET_TRIPLET: process.env.VCPKG_TARGET_TRIPLET || triplet,
+  };
+
+  if (overlayTriplets && fs.existsSync(path.join(repoRoot, 'triplets'))) {
+    cmakeOptions.VCPKG_OVERLAY_TRIPLETS = path.join(repoRoot, 'triplets');
+  }
+
+  if (toolchainFile) {
+    cmakeOptions.CMAKE_TOOLCHAIN_FILE = toolchainFile;
+  }
+
+  const installOptions = process.env.VCPKG_INSTALL_OPTIONS || (process.platform === 'darwin' ? '--allow-unsupported' : '');
+  if (installOptions) {
+    cmakeOptions.VCPKG_INSTALL_OPTIONS = installOptions;
+  }
+
+  if (process.platform === 'win32') {
+    cmakeOptions.CMAKE_MSVC_RUNTIME_LIBRARY = process.env.CMAKE_MSVC_RUNTIME_LIBRARY || 'MultiThreadedDLL';
+  } else if (process.env.CMAKE_MSVC_RUNTIME_LIBRARY) {
+    cmakeOptions.CMAKE_MSVC_RUNTIME_LIBRARY = process.env.CMAKE_MSVC_RUNTIME_LIBRARY;
+  }
+
+  return cmakeOptions;
+}
+
+function loadCmakeJsBuildSystem() {
+  const cmakeJsPackagePath = path.join(appDir, 'node_modules', 'cmake-js', 'package.json');
+  if (!fs.existsSync(cmakeJsPackagePath)) {
+    throw new Error('cmake-js is not installed. Run `npm --prefix app install` first.');
+  }
+
+  return require(path.join(appDir, 'node_modules', 'cmake-js')).BuildSystem;
+}
+
+async function resolveCmakeCommands(electronVersion, cmakeOptions) {
+  const BuildSystem = loadCmakeJsBuildSystem();
+  const outDir = path.resolve(appDir, cmakeOutDir);
+  const buildSystem = new BuildSystem({
+    directory: repoRoot,
+    out: outDir,
+    runtime: 'electron',
+    runtimeVersion: electronVersion,
+    config: cmakeConfig,
+    cMakeOptions: cmakeOptions,
+    target: nativeModuleTarget,
+  });
+
+  return {
+    outDir,
+    configureCommand: await buildSystem.getConfigureCommand(),
+    buildCommand: await buildSystem.getBuildCommand(),
+  };
 }
 
 function pruneStaleWindowsBuildDir(buildDir) {
@@ -399,63 +488,25 @@ function pruneStaleWindowsBuildDir(buildDir) {
   fs.rmSync(buildDir, { recursive: true, force: true });
 }
 
-function runBuild() {
+async function runBuild() {
   const { version: electronVersion } = readElectronVersion();
   const metadata = expectedBuildMetadata();
   const { triplet, overlayTriplets } = resolveTriplet();
-  const cmakeJsCli = path.join(appDir, 'node_modules', 'cmake-js', 'bin', 'cmake-js');
-
-  if (!fs.existsSync(cmakeJsCli)) {
-    throw new Error('cmake-js is not installed. Run `npm --prefix app install` first.');
-  }
 
   pruneStaleWindowsBuildDir(path.resolve(appDir, cmakeOutDir));
 
-  const toolchainFileFromEnv = process.env.CMAKE_TOOLCHAIN_FILE;
-  const defaultToolchainPath = path.join(repoRoot, 'vcpkg', 'scripts', 'buildsystems', 'vcpkg.cmake');
-  const toolchainFile =
-    toolchainFileFromEnv ||
-    (fs.existsSync(defaultToolchainPath) ? '../vcpkg/scripts/buildsystems/vcpkg.cmake' : null);
-
-  const cmakeArgs = [
-    '-d',
-    '..',
-    '--out',
-    cmakeOutDir,
-    '-r',
-    'electron',
-    '-v',
-    electronVersion,
-    '--config',
-    cmakeConfig,
-    `--CDVCPKG_TARGET_TRIPLET=${process.env.VCPKG_TARGET_TRIPLET || triplet}`,
-  ];
-
-  if (overlayTriplets && fs.existsSync(path.join(repoRoot, 'triplets'))) {
-    cmakeArgs.push(`--CDVCPKG_OVERLAY_TRIPLETS=${overlayTriplets}`);
-  }
-
-  if (toolchainFile) {
-    cmakeArgs.push(`--CDCMAKE_TOOLCHAIN_FILE=${toolchainFile}`);
-  }
-
-  const installOptions = process.env.VCPKG_INSTALL_OPTIONS || (process.platform === 'darwin' ? '--allow-unsupported' : '');
-  if (installOptions) {
-    cmakeArgs.push(`--CDVCPKG_INSTALL_OPTIONS=${installOptions}`);
-  }
-
-  if (process.platform === 'win32' && !process.env.CMAKE_MSVC_RUNTIME_LIBRARY) {
-    cmakeArgs.push('--CDCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL');
-  }
+  const cmakeOptions = resolveCmakeOptions(triplet, overlayTriplets);
+  const { outDir, configureCommand, buildCommand } = await resolveCmakeCommands(electronVersion, cmakeOptions);
+  fs.mkdirSync(outDir, { recursive: true });
 
   console.log(
-    `[native] Configuring tightrope-core.node (${effectiveBuildMode} mode; node ${path.relative(appDir, cmakeJsCli)} configure ${cmakeArgs.join(' ')})`
+    `[native] Configuring ${nativeModuleFilename} (${effectiveBuildMode} mode; ${formatCommand(configureCommand)})`
   );
-  runCmakeJs('configure', cmakeJsCli, cmakeArgs);
+  runCommand(configureCommand, { cwd: outDir });
   console.log(
-    `[native] Building tightrope-core.node (${effectiveBuildMode} mode; node ${path.relative(appDir, cmakeJsCli)} build ${cmakeArgs.join(' ')})`
+    `[native] Building ${nativeModuleFilename} (${effectiveBuildMode} mode; ${formatCommand(buildCommand)})`
   );
-  runCmakeJs('build', cmakeJsCli, cmakeArgs);
+  runCommand(buildCommand, { cwd: appDir });
 
   let builtOutputs = existingModulePaths();
   if (builtOutputs.length === 0) {
@@ -527,7 +578,7 @@ function shouldRebuild() {
   return { rebuild: true, reason: 'native module is older than native source/build inputs' };
 }
 
-function main() {
+async function main() {
   try {
     if (buildMode !== effectiveBuildMode) {
       console.log(`[native] target mode=${buildMode} aliased to ${effectiveBuildMode} on ${process.platform}`);
@@ -538,7 +589,7 @@ function main() {
         console.log('[native] --dry-run: force rebuild requested.');
         return;
       }
-      runBuild();
+      await runBuild();
       return;
     }
 
@@ -553,7 +604,7 @@ function main() {
       return;
     }
 
-    runBuild();
+    await runBuild();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[native] ${message}`);
