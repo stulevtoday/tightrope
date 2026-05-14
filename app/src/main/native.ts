@@ -215,6 +215,64 @@ function packagedNativeModuleCandidates(): string[] {
   ];
 }
 
+function uniquePaths(paths: string[]): string[] {
+  return Array.from(new Set(paths.map((candidate) => path.resolve(candidate))));
+}
+
+function pathHasSegment(candidate: string, segment: string): boolean {
+  const normalizedSegment = segment.toLowerCase();
+  return path
+    .normalize(candidate)
+    .split(path.sep)
+    .some((part) => part.toLowerCase() === normalizedSegment);
+}
+
+function walkNativeModuleOutputs(
+  rootDir: string,
+  config: 'Debug' | 'Release',
+  out: string[] = [],
+  searchRoot = rootDir
+): string[] {
+  if (!fs.existsSync(rootDir)) {
+    return out;
+  }
+
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = fs.readdirSync(rootDir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === 'dist') {
+        continue;
+      }
+      walkNativeModuleOutputs(fullPath, config, out, searchRoot);
+      continue;
+    }
+
+    if (entry.name.toLowerCase() !== 'tightrope-core.node') {
+      continue;
+    }
+
+    const relativeOutputPath = path.relative(searchRoot, fullPath);
+    if (
+      config === 'Debug'
+        ? pathHasSegment(relativeOutputPath, 'Release')
+        : pathHasSegment(relativeOutputPath, 'Debug')
+    ) {
+      continue;
+    }
+
+    out.push(fullPath);
+  }
+
+  return out;
+}
+
 function nativeModuleCandidates(): string[] {
   const requestedMode = resolveNativeBuildMode();
   // On Windows the vcpkg graph (nuraft, SQLiteCpp, libuv, ...) does not produce a
@@ -227,24 +285,30 @@ function nativeModuleCandidates(): string[] {
   // If debug/release paths diverge between builder and loader, Electron startup can crash.
   const buildDir = buildMode === 'debug' ? 'build-electron-debug' : 'build';
   const config = buildMode === 'debug' ? 'Debug' : 'Release';
+  const buildRoots = uniquePaths([
+    path.resolve(__dirname, `../../../${buildDir}`),
+    path.resolve(__dirname, `../../${buildDir}`),
+    path.resolve(process.cwd(), `../${buildDir}`),
+    path.resolve(process.cwd(), buildDir),
+  ]);
 
-  return Array.from(
-    new Set([
-      // Packaged app resources (electron-builder extraResources / asarUnpack)
-      ...packagedNativeModuleCandidates(),
-      // cmake-js style output
-      path.resolve(__dirname, `../../../${buildDir}/${config}/tightrope-core.node`),
-      path.resolve(__dirname, `../../../${buildDir}/tightrope-core.node`),
-      // Project-local fallbacks when app runs from ./app
-      path.resolve(__dirname, `../../${buildDir}/${config}/tightrope-core.node`),
-      path.resolve(__dirname, `../../${buildDir}/tightrope-core.node`),
-      // Fallbacks based on current working directory
-      path.resolve(process.cwd(), `../${buildDir}/${config}/tightrope-core.node`),
-      path.resolve(process.cwd(), `../${buildDir}/tightrope-core.node`),
-      path.resolve(process.cwd(), `${buildDir}/${config}/tightrope-core.node`),
-      path.resolve(process.cwd(), `${buildDir}/tightrope-core.node`),
-    ])
-  );
+  return uniquePaths([
+    // Packaged app resources (electron-builder extraResources / asarUnpack)
+    ...packagedNativeModuleCandidates(),
+    // cmake-js style output
+    path.resolve(__dirname, `../../../${buildDir}/${config}/tightrope-core.node`),
+    path.resolve(__dirname, `../../../${buildDir}/tightrope-core.node`),
+    // Project-local fallbacks when app runs from ./app
+    path.resolve(__dirname, `../../${buildDir}/${config}/tightrope-core.node`),
+    path.resolve(__dirname, `../../${buildDir}/tightrope-core.node`),
+    // Fallbacks based on current working directory
+    path.resolve(process.cwd(), `../${buildDir}/${config}/tightrope-core.node`),
+    path.resolve(process.cwd(), `../${buildDir}/tightrope-core.node`),
+    path.resolve(process.cwd(), `${buildDir}/${config}/tightrope-core.node`),
+    path.resolve(process.cwd(), `${buildDir}/tightrope-core.node`),
+    // Fallback for nested generator-specific output directories.
+    ...buildRoots.flatMap((root) => walkNativeModuleOutputs(root, config)),
+  ]);
 }
 
 function createNativeStubs(): NativeModule {

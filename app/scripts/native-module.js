@@ -35,23 +35,101 @@ const cmakeConfig = effectiveBuildMode === 'debug' ? 'Debug' : 'Release';
 // Debug must stay isolated in build-electron-debug (do NOT reuse build-debug, which is
 // used by non-cmake-js/test builds and can produce incompatible addon binaries).
 const cmakeOutDir = effectiveBuildMode === 'debug' ? '../build-electron-debug' : '../build';
+const nativeModuleFilename = 'tightrope-core.node';
+const windowsNativeDllFilename = 'tightrope-core.dll';
+
+function uniquePaths(paths) {
+  return Array.from(new Set(paths.map((candidate) => path.resolve(candidate))));
+}
+
+function nativeModuleBuildRootsForMode(mode = effectiveBuildMode) {
+  const buildDir = mode === 'debug' ? 'build-electron-debug' : 'build';
+  return uniquePaths([path.join(repoRoot, buildDir), path.join(appDir, buildDir)]);
+}
+
+function pathHasSegment(candidate, segment) {
+  const normalizedSegment = segment.toLowerCase();
+  return path
+    .normalize(candidate)
+    .split(path.sep)
+    .some((part) => part.toLowerCase() === normalizedSegment);
+}
+
+function matchesBuildMode(candidate, mode = effectiveBuildMode, rootDir = null) {
+  // Multi-config generators can leave both Debug and Release artifacts in the
+  // same build tree. Keep recursive discovery from selecting the opposite mode.
+  const scopedPath = rootDir ? path.relative(rootDir, candidate) : candidate;
+  return mode === 'debug' ? !pathHasSegment(scopedPath, 'Release') : !pathHasSegment(scopedPath, 'Debug');
+}
 
 function nativeModuleCandidatesForMode(mode = effectiveBuildMode) {
-  if (mode === 'debug') {
-    return [
-      path.join(repoRoot, 'build-electron-debug', 'Debug', 'tightrope-core.node'),
-      path.join(repoRoot, 'build-electron-debug', 'tightrope-core.node'),
-      path.join(appDir, 'build-electron-debug', 'Debug', 'tightrope-core.node'),
-      path.join(appDir, 'build-electron-debug', 'tightrope-core.node'),
-    ];
+  const exactCandidates =
+    mode === 'debug'
+      ? [
+          path.join(repoRoot, 'build-electron-debug', 'Debug', nativeModuleFilename),
+          path.join(repoRoot, 'build-electron-debug', nativeModuleFilename),
+          path.join(appDir, 'build-electron-debug', 'Debug', nativeModuleFilename),
+          path.join(appDir, 'build-electron-debug', nativeModuleFilename),
+        ]
+      : [
+          path.join(repoRoot, 'build', 'Release', nativeModuleFilename),
+          path.join(repoRoot, 'build', nativeModuleFilename),
+          path.join(appDir, 'build', 'Release', nativeModuleFilename),
+          path.join(appDir, 'build', nativeModuleFilename),
+        ];
+
+  return uniquePaths([...exactCandidates, ...discoverNativeArtifactsForMode(nativeModuleFilename, mode)]);
+}
+
+function discoverNativeArtifactsForMode(filename, mode = effectiveBuildMode) {
+  const normalizedFilename = filename.toLowerCase();
+  return nativeModuleBuildRootsForMode(mode)
+    .flatMap((root) =>
+      walkFiles(root, (fullPath) => {
+        return path.basename(fullPath).toLowerCase() === normalizedFilename && matchesBuildMode(fullPath, mode, root);
+      })
+    )
+    .sort();
+}
+
+function normalizeWindowsDllOutputs() {
+  if (process.platform !== 'win32') {
+    return [];
   }
 
-  return [
-    path.join(repoRoot, 'build', 'Release', 'tightrope-core.node'),
-    path.join(repoRoot, 'build', 'tightrope-core.node'),
-    path.join(appDir, 'build', 'Release', 'tightrope-core.node'),
-    path.join(appDir, 'build', 'tightrope-core.node'),
-  ];
+  const dllOutputs = discoverNativeArtifactsForMode(windowsNativeDllFilename);
+  const nodeOutputs = [];
+  for (const dllPath of dllOutputs) {
+    const nodePath = path.join(path.dirname(dllPath), nativeModuleFilename);
+    fs.copyFileSync(dllPath, nodePath);
+    nodeOutputs.push(nodePath);
+    console.log(`[native] Copied Windows DLL addon output to ${nodePath}`);
+  }
+
+  return nodeOutputs;
+}
+
+function nativeArtifactDiagnostics() {
+  return nativeModuleBuildRootsForMode()
+    .flatMap((root) =>
+      walkFiles(root, (fullPath) => /^tightrope-core\.(node|dll|lib|pdb)$/i.test(path.basename(fullPath)))
+    )
+    .sort();
+}
+
+function searchedNativeOutputRoots() {
+  return nativeModuleBuildRootsForMode()
+    .map((root) => path.relative(appDir, root) || '.')
+    .join(', ');
+}
+
+function missingNativeModuleMessage() {
+  const diagnostics = nativeArtifactDiagnostics();
+  const suffix =
+    diagnostics.length > 0
+      ? ` Found related artifact(s): ${diagnostics.map((artifact) => path.relative(appDir, artifact)).join(', ')}.`
+      : '';
+  return `Build succeeded but ${nativeModuleFilename} was not found under ${searchedNativeOutputRoots()}.${suffix}`;
 }
 
 function metadataPathFor(modulePath) {
@@ -364,9 +442,14 @@ function runBuild() {
     throw result.error;
   }
 
-  const builtOutputs = existingModulePaths();
+  let builtOutputs = existingModulePaths();
   if (builtOutputs.length === 0) {
-    throw new Error('Build succeeded but tightrope-core.node was not found in expected output paths.');
+    const normalizedOutputs = normalizeWindowsDllOutputs();
+    builtOutputs = normalizedOutputs.filter((candidate) => fs.existsSync(candidate));
+  }
+
+  if (builtOutputs.length === 0) {
+    throw new Error(missingNativeModuleMessage());
   }
 
   assertNoUnresolvedProjectSymbols(builtOutputs);
