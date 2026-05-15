@@ -251,6 +251,7 @@ sticky_cleanup_interval_ms = 60000
 | `TIGHTROPE_UPSTREAM_TIMEOUT_MS` | `120000` | Upstream request timeout |
 | `TIGHTROPE_UPSTREAM_BRIDGE_POLL_TIMEOUT_MS` | `1000` | WebSocket bridge read poll timeout |
 | `TIGHTROPE_UPSTREAM_ENABLE_REQUEST_COMPRESSION` | `false` | Enables zstd request compression when available |
+| `TIGHTROPE_OUTBOUND_PROXY_URL` | unset | Optional outbound proxy for external native HTTP/WebSocket traffic. Supports `socks5h://host:port`, `socks5://host:port`, and `http://host:port`; bare `host:port` defaults to `socks5h`. Use a local Xray/sing-box inbound here for VLESS-REALITY or Shadowsocks VPS routes. |
 | `TIGHTROPE_CODEX_CLIENT_VERSION` | `1.0.0` | Version query for codex models endpoint |
 | `TIGHTROPE_AUTH_BASE_URL` | `https://auth.openai.com` | OAuth auth host |
 | `TIGHTROPE_OAUTH_CLIENT_ID` | project default | OAuth client id |

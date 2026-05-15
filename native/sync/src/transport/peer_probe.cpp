@@ -443,6 +443,9 @@ PeerProbeResult probe_peer_handshake(const discovery::PeerEndpoint& endpoint, co
     if (!tls_stream.configure(config.tls, &tls_error)) {
         return fail("tls configure failed: " + tls_error);
     }
+    if (!tls_stream.set_client_hostname_verification(endpoint.host, &tls_error)) {
+        return fail("tls configure failed: " + tls_error);
+    }
     std::string operation_error;
     if (!connect_with_timeout(io_context, tls_stream.socket(), resolved, timeout, &operation_error)) {
         return fail("connect failed: " + operation_error);

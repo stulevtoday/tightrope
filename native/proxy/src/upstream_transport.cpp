@@ -1,6 +1,7 @@
 #include "upstream_transport.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <istream>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -16,10 +18,16 @@
 #include <string_view>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/read_until.hpp>
 #include <boost/asio/ssl.hpp>
+#include <boost/asio/ssl/host_name_verification.hpp>
+#include <boost/asio/streambuf.hpp>
+#include <boost/asio/write.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/ssl.hpp>
 #include <boost/beast/websocket.hpp>
@@ -43,6 +51,7 @@
 #include "internal/proxy_error_policy.h"
 #include "internal/proxy_service_helpers.h"
 #include "logging/logger.h"
+#include "net/outbound_proxy.h"
 #include "openai/error_envelope.h"
 #include "text/ascii.h"
 #include "account_traffic.h"
@@ -551,6 +560,275 @@ std::string websocket_authority_header(const ParsedUpstreamUrl& parsed) {
     return parsed.host + ":" + parsed.port;
 }
 
+UpstreamExecutionResult websocket_result_with_error(const boost::system::error_code& ec);
+
+std::optional<std::uint16_t> parse_u16_port(const std::string_view value) {
+    if (value.empty()) {
+        return std::nullopt;
+    }
+    std::uint32_t port = 0;
+    for (const char ch : value) {
+        if (ch < '0' || ch > '9') {
+            return std::nullopt;
+        }
+        port = (port * 10U) + static_cast<std::uint32_t>(ch - '0');
+        if (port > 65535U) {
+            return std::nullopt;
+        }
+    }
+    if (port == 0) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint16_t>(port);
+}
+
+std::vector<unsigned char> port_bytes(const std::uint16_t port) {
+    return {
+        static_cast<unsigned char>((port >> 8U) & 0xffU),
+        static_cast<unsigned char>(port & 0xffU),
+    };
+}
+
+UpstreamExecutionResult websocket_result_with_proxy_failure(const std::string& message) {
+    UpstreamExecutionResult result;
+    result.status = 502;
+    result.close_code = 1011;
+    result.accepted = false;
+    result.error_code = "upstream_proxy_unavailable";
+    result.body = message;
+    return result;
+}
+
+bool http_connect_tunnel(
+    tcp::socket& socket,
+    const ParsedUpstreamUrl& destination,
+    std::string* error
+) {
+    const auto authority = websocket_authority_header(destination);
+    const auto request =
+        "CONNECT " + authority + " HTTP/1.1\r\nHost: " + authority + "\r\nProxy-Connection: Keep-Alive\r\n\r\n";
+
+    boost::system::error_code ec;
+    asio::write(socket, asio::buffer(request), ec);
+    if (ec) {
+        if (error != nullptr) {
+            *error = "HTTP proxy CONNECT write failed: " + ec.message();
+        }
+        return false;
+    }
+
+    asio::streambuf response_buffer;
+    asio::read_until(socket, response_buffer, "\r\n\r\n", ec);
+    if (ec) {
+        if (error != nullptr) {
+            *error = "HTTP proxy CONNECT response failed: " + ec.message();
+        }
+        return false;
+    }
+
+    std::istream response_stream(&response_buffer);
+    std::string http_version;
+    unsigned int status_code = 0;
+    response_stream >> http_version >> status_code;
+    if (http_version.rfind("HTTP/", 0) != 0 || status_code < 200 || status_code >= 300) {
+        if (error != nullptr) {
+            *error = "HTTP proxy CONNECT rejected tunnel with status " + std::to_string(status_code);
+        }
+        return false;
+    }
+    return true;
+}
+
+bool socks5_read_exact(tcp::socket& socket, unsigned char* data, const std::size_t size, std::string* error) {
+    boost::system::error_code ec;
+    asio::read(socket, asio::buffer(data, size), ec);
+    if (ec) {
+        if (error != nullptr) {
+            *error = "SOCKS5 proxy read failed: " + ec.message();
+        }
+        return false;
+    }
+    return true;
+}
+
+bool socks5_connect_tunnel(
+    asio::io_context& io_context,
+    tcp::socket& socket,
+    const core::net::OutboundProxyConfig& proxy,
+    const ParsedUpstreamUrl& destination,
+    std::string* error
+) {
+    boost::system::error_code ec;
+    const std::array<unsigned char, 3> greeting{0x05, 0x01, 0x00};
+    asio::write(socket, asio::buffer(greeting), ec);
+    if (ec) {
+        if (error != nullptr) {
+            *error = "SOCKS5 proxy greeting failed: " + ec.message();
+        }
+        return false;
+    }
+
+    std::array<unsigned char, 2> greeting_response{};
+    if (!socks5_read_exact(socket, greeting_response.data(), greeting_response.size(), error)) {
+        return false;
+    }
+    if (greeting_response[0] != 0x05 || greeting_response[1] != 0x00) {
+        if (error != nullptr) {
+            *error = "SOCKS5 proxy requires unsupported authentication";
+        }
+        return false;
+    }
+
+    const auto destination_port = parse_u16_port(destination.port);
+    if (!destination_port.has_value()) {
+        if (error != nullptr) {
+            *error = "SOCKS5 destination port is invalid";
+        }
+        return false;
+    }
+
+    std::vector<unsigned char> request{0x05, 0x01, 0x00};
+    boost::system::error_code address_ec;
+    auto address = asio::ip::make_address(destination.host, address_ec);
+    if (!proxy.remote_dns && address_ec) {
+        tcp::resolver resolver(io_context);
+        const auto resolved = resolver.resolve(destination.host, destination.port, ec);
+        if (ec || resolved.empty()) {
+            if (error != nullptr) {
+                *error = "SOCKS5 local DNS resolution failed: " + ec.message();
+            }
+            return false;
+        }
+        address = resolved.begin()->endpoint().address();
+        address_ec.clear();
+    }
+
+    if (!address_ec && address.is_v4()) {
+        request.push_back(0x01);
+        const auto bytes = address.to_v4().to_bytes();
+        request.insert(request.end(), bytes.begin(), bytes.end());
+    } else if (!address_ec && address.is_v6()) {
+        request.push_back(0x04);
+        const auto bytes = address.to_v6().to_bytes();
+        request.insert(request.end(), bytes.begin(), bytes.end());
+    } else {
+        if (destination.host.size() > 255) {
+            if (error != nullptr) {
+                *error = "SOCKS5 destination host is too long";
+            }
+            return false;
+        }
+        request.push_back(0x03);
+        request.push_back(static_cast<unsigned char>(destination.host.size()));
+        request.insert(request.end(), destination.host.begin(), destination.host.end());
+    }
+
+    const auto port = port_bytes(*destination_port);
+    request.insert(request.end(), port.begin(), port.end());
+    asio::write(socket, asio::buffer(request), ec);
+    if (ec) {
+        if (error != nullptr) {
+            *error = "SOCKS5 proxy connect write failed: " + ec.message();
+        }
+        return false;
+    }
+
+    std::array<unsigned char, 4> response_header{};
+    if (!socks5_read_exact(socket, response_header.data(), response_header.size(), error)) {
+        return false;
+    }
+    if (response_header[0] != 0x05 || response_header[1] != 0x00) {
+        if (error != nullptr) {
+            *error = "SOCKS5 proxy rejected tunnel with status " + std::to_string(response_header[1]);
+        }
+        return false;
+    }
+
+    std::size_t address_bytes = 0;
+    if (response_header[3] == 0x01) {
+        address_bytes = 4;
+    } else if (response_header[3] == 0x04) {
+        address_bytes = 16;
+    } else if (response_header[3] == 0x03) {
+        unsigned char length = 0;
+        if (!socks5_read_exact(socket, &length, 1, error)) {
+            return false;
+        }
+        address_bytes = length;
+    } else {
+        if (error != nullptr) {
+            *error = "SOCKS5 proxy returned invalid address type";
+        }
+        return false;
+    }
+
+    std::vector<unsigned char> ignored(address_bytes + 2);
+    return socks5_read_exact(socket, ignored.data(), ignored.size(), error);
+}
+
+bool connect_upstream_tcp_stream(
+    beast::tcp_stream& stream,
+    asio::io_context& io_context,
+    const ParsedUpstreamUrl& destination,
+    const long connect_timeout_ms,
+    UpstreamExecutionResult* failure
+) {
+    if (failure == nullptr) {
+        return false;
+    }
+
+    std::string proxy_error;
+    const auto proxy = core::net::outbound_proxy_from_env(&proxy_error);
+    if (!proxy.has_value() && !proxy_error.empty()) {
+        *failure = websocket_result_with_proxy_failure(proxy_error);
+        return false;
+    }
+
+    boost::system::error_code ec;
+    tcp::resolver resolver(io_context);
+    const auto connect_host = proxy.has_value() ? proxy->host : destination.host;
+    const auto connect_port = proxy.has_value() ? std::to_string(proxy->port) : destination.port;
+    const auto endpoints = resolver.resolve(connect_host, connect_port, ec);
+    if (ec) {
+        *failure = websocket_result_with_error(ec);
+        return false;
+    }
+
+    stream.expires_after(std::chrono::milliseconds(connect_timeout_ms));
+    stream.connect(endpoints, ec);
+    if (ec) {
+        *failure = proxy.has_value() ? websocket_result_with_proxy_failure(ec.message()) : websocket_result_with_error(ec);
+        return false;
+    }
+
+    if (!proxy.has_value()) {
+        return true;
+    }
+
+    bool tunneled = false;
+    std::string tunnel_error;
+    if (proxy->protocol == core::net::OutboundProxyProtocol::HttpConnect) {
+        tunneled = http_connect_tunnel(stream.socket(), destination, &tunnel_error);
+    } else {
+        tunneled = socks5_connect_tunnel(io_context, stream.socket(), *proxy, destination, &tunnel_error);
+    }
+    if (!tunneled) {
+        boost::system::error_code close_ec;
+        stream.socket().close(close_ec);
+        *failure = websocket_result_with_proxy_failure(tunnel_error);
+        return false;
+    }
+
+    core::logging::log_event(
+        core::logging::LogLevel::Info,
+        "runtime",
+        "proxy",
+        "upstream_outbound_proxy_tunnel_ready",
+        "proxy=" + core::net::outbound_proxy_endpoint_label(*proxy) + " target=" + websocket_authority_header(destination)
+    );
+    return true;
+}
+
 template <typename WebSocketStream>
 void configure_websocket_client(WebSocketStream& ws, const long connect_timeout_ms, const long request_timeout_ms) {
     websocket::stream_base::timeout timeout_cfg{
@@ -858,13 +1136,7 @@ std::optional<BridgeConnection> open_bridge_connection(
         return std::nullopt;
     }
 
-    tcp::resolver resolver(*connection.io_context);
     boost::system::error_code ec;
-    const auto endpoints = resolver.resolve(parsed.host, parsed.port, ec);
-    if (ec) {
-        *failure = websocket_result_with_error(ec);
-        return std::nullopt;
-    }
 
     const auto host_header = websocket_authority_header(parsed);
     auto apply_request_headers = [&](websocket::request_type& request) {
@@ -875,10 +1147,13 @@ std::optional<BridgeConnection> open_bridge_connection(
         connection.tls = false;
         connection.plain_ws = std::make_unique<websocket::stream<beast::tcp_stream>>(*connection.io_context);
         auto& ws = *connection.plain_ws;
-        beast::get_lowest_layer(ws).expires_after(std::chrono::milliseconds(connect_timeout_ms));
-        beast::get_lowest_layer(ws).connect(endpoints, ec);
-        if (ec) {
-            *failure = websocket_result_with_error(ec);
+        if (!connect_upstream_tcp_stream(
+                beast::get_lowest_layer(ws),
+                *connection.io_context,
+                parsed,
+                connect_timeout_ms,
+                failure
+            )) {
             return std::nullopt;
         }
         configure_persistent_bridge_websocket_client(ws, connect_timeout_ms, read_poll_timeout_ms);
@@ -917,13 +1192,18 @@ std::optional<BridgeConnection> open_bridge_connection(
     }
 
     beast::get_lowest_layer(ws).expires_after(std::chrono::milliseconds(connect_timeout_ms));
-    beast::get_lowest_layer(ws).connect(endpoints, ec);
-    if (ec) {
-        *failure = websocket_result_with_error(ec);
+    if (!connect_upstream_tcp_stream(
+            beast::get_lowest_layer(ws),
+            *connection.io_context,
+            parsed,
+            connect_timeout_ms,
+            failure
+        )) {
         return std::nullopt;
     }
 
     ws.next_layer().set_verify_mode(ssl::verify_peer);
+    ws.next_layer().set_verify_callback(ssl::host_name_verification(parsed.host));
     ws.next_layer().handshake(ssl::stream_base::client, ec);
     if (ec) {
         *failure = websocket_result_with_error(ec);
@@ -1455,12 +1735,7 @@ UpstreamExecutionResult execute_over_websocket(const openai::UpstreamRequestPlan
     }
 
     asio::io_context io_context;
-    tcp::resolver resolver(io_context);
     boost::system::error_code ec;
-    const auto endpoints = resolver.resolve(parsed->host, parsed->port, ec);
-    if (ec) {
-        return websocket_result_with_error(ec);
-    }
 
     auto apply_request_headers = [&](websocket::request_type& request) {
         apply_websocket_request_headers(request, plan.headers);
@@ -1468,10 +1743,15 @@ UpstreamExecutionResult execute_over_websocket(const openai::UpstreamRequestPlan
 
     if (ws_scheme == "ws") {
         websocket::stream<beast::tcp_stream> ws(io_context);
-        beast::get_lowest_layer(ws).expires_after(std::chrono::milliseconds(connect_timeout_ms));
-        beast::get_lowest_layer(ws).connect(endpoints, ec);
-        if (ec) {
-            return websocket_result_with_error(ec);
+        UpstreamExecutionResult connect_failure;
+        if (!connect_upstream_tcp_stream(
+                beast::get_lowest_layer(ws),
+                io_context,
+                *parsed,
+                connect_timeout_ms,
+                &connect_failure
+            )) {
+            return connect_failure;
         }
         configure_websocket_client(ws, connect_timeout_ms, request_timeout_ms);
         ws.set_option(websocket::stream_base::decorator(apply_request_headers));
@@ -1504,13 +1784,19 @@ UpstreamExecutionResult execute_over_websocket(const openai::UpstreamRequestPlan
         return result;
     }
 
-    beast::get_lowest_layer(ws).expires_after(std::chrono::milliseconds(connect_timeout_ms));
-    beast::get_lowest_layer(ws).connect(endpoints, ec);
-    if (ec) {
-        return websocket_result_with_error(ec);
+    UpstreamExecutionResult connect_failure;
+    if (!connect_upstream_tcp_stream(
+            beast::get_lowest_layer(ws),
+            io_context,
+            *parsed,
+            connect_timeout_ms,
+            &connect_failure
+        )) {
+        return connect_failure;
     }
 
     ws.next_layer().set_verify_mode(ssl::verify_peer);
+    ws.next_layer().set_verify_callback(ssl::host_name_verification(parsed->host));
     ws.next_layer().handshake(ssl::stream_base::client, ec);
     if (ec) {
         return websocket_result_with_error(ec);
@@ -1554,6 +1840,12 @@ UpstreamExecutionResult execute_over_http(
         return result;
     }
     CURL* curl = curl_guard.get();
+    std::string outbound_proxy_error;
+    if (!core::net::apply_curl_outbound_proxy(curl, &outbound_proxy_error)) {
+        result.error_code = "upstream_proxy_unavailable";
+        result.body = outbound_proxy_error;
+        return result;
+    }
 
     std::string response_body;
     std::string request_body = websocket_fallback ? normalize_ws_payload_for_http_fallback(plan.body) : plan.body;

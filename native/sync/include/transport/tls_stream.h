@@ -29,6 +29,7 @@ public:
     const boost::asio::ip::tcp::socket& socket() const;
 
     bool configure(const TlsConfig& config, std::string* error = nullptr);
+    bool set_client_hostname_verification(std::string_view server_name, std::string* error = nullptr);
     bool handshake_client(std::string_view server_name, std::string* error = nullptr);
     bool handshake_server(std::string* error = nullptr);
 
@@ -37,11 +38,13 @@ public:
 
 private:
     bool configure_verify_callback();
+    bool verify_preverified_and_pin(bool preverified, boost::asio::ssl::verify_context& context) const;
     static std::string normalize_fingerprint(std::string_view fingerprint);
 
     boost::asio::ssl::context context_;
     boost::asio::ssl::stream<boost::asio::ip::tcp::socket> stream_;
     bool server_mode_ = false;
+    bool verify_peer_ = false;
     std::string pinned_peer_certificate_sha256_;
 };
 

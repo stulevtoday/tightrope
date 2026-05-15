@@ -11,6 +11,7 @@
 #include <curl/curl.h>
 #include <glaze/glaze.hpp>
 
+#include "net/outbound_proxy.h"
 #include "text/json_escape.h"
 
 namespace tightrope::auth::oauth {
@@ -194,6 +195,15 @@ ProviderResult<HttpResponse> perform_post_request(
         return ProviderResult<HttpResponse>::fail({
             .code = "oauth_transport_init_failed",
             .message = "Failed to initialize OAuth HTTP client",
+            .status_code = 0,
+        });
+    }
+    std::string proxy_error;
+    if (!core::net::apply_curl_outbound_proxy(curl, &proxy_error)) {
+        curl_easy_cleanup(curl);
+        return ProviderResult<HttpResponse>::fail({
+            .code = "oauth_proxy_unavailable",
+            .message = "OAuth outbound proxy unavailable: " + proxy_error,
             .status_code = 0,
         });
     }

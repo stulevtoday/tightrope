@@ -7,6 +7,7 @@
 #include <string>
 
 #include <boost/asio/ssl.hpp>
+#include <boost/asio/ssl/host_name_verification.hpp>
 #include <openssl/evp.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
@@ -68,35 +69,42 @@ std::string TlsStream::normalize_fingerprint(const std::string_view fingerprint)
 bool TlsStream::configure_verify_callback() {
     stream_.set_verify_callback(
         [this](const bool preverified, boost::asio::ssl::verify_context& context) {
-            if (!preverified) {
-                return false;
-            }
-            if (pinned_peer_certificate_sha256_.empty()) {
-                return true;
-            }
-            auto* store = context.native_handle();
-            if (store == nullptr) {
-                return false;
-            }
-            if (X509_STORE_CTX_get_error_depth(store) != 0) {
-                return true;
-            }
-            X509* cert = X509_STORE_CTX_get_current_cert(store);
-            if (cert == nullptr) {
-                return false;
-            }
-            unsigned char digest[EVP_MAX_MD_SIZE] = {};
-            unsigned int digest_size = 0;
-            if (X509_digest(cert, EVP_sha256(), digest, &digest_size) != 1) {
-                return false;
-            }
-            const auto observed = core::text::hex_encode(
-                std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(digest), digest_size)
-            );
-            return observed == pinned_peer_certificate_sha256_;
+            return verify_preverified_and_pin(preverified, context);
         }
     );
     return true;
+}
+
+bool TlsStream::verify_preverified_and_pin(
+    const bool preverified,
+    boost::asio::ssl::verify_context& context
+) const {
+    if (!preverified) {
+        return false;
+    }
+    if (pinned_peer_certificate_sha256_.empty()) {
+        return true;
+    }
+    auto* store = context.native_handle();
+    if (store == nullptr) {
+        return false;
+    }
+    if (X509_STORE_CTX_get_error_depth(store) != 0) {
+        return true;
+    }
+    X509* cert = X509_STORE_CTX_get_current_cert(store);
+    if (cert == nullptr) {
+        return false;
+    }
+    unsigned char digest[EVP_MAX_MD_SIZE] = {};
+    unsigned int digest_size = 0;
+    if (X509_digest(cert, EVP_sha256(), digest, &digest_size) != 1) {
+        return false;
+    }
+    const auto observed = core::text::hex_encode(
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(digest), digest_size)
+    );
+    return observed == pinned_peer_certificate_sha256_;
 }
 
 bool TlsStream::configure(const TlsConfig& config, std::string* error) {
@@ -140,6 +148,7 @@ bool TlsStream::configure(const TlsConfig& config, std::string* error) {
     }
 
     boost::asio::ssl::verify_mode verify_mode = boost::asio::ssl::verify_none;
+    verify_peer_ = config.verify_peer;
     if (config.verify_peer) {
         verify_mode = boost::asio::ssl::verify_peer;
         if (server_mode_) {
@@ -151,6 +160,25 @@ bool TlsStream::configure(const TlsConfig& config, std::string* error) {
     return configure_verify_callback();
 }
 
+bool TlsStream::set_client_hostname_verification(const std::string_view server_name, std::string* error) {
+    if (server_mode_ || !verify_peer_ || server_name.empty()) {
+        return configure_verify_callback();
+    }
+
+    const auto expected_host = std::string(server_name);
+    stream_.set_verify_callback(
+        [this, expected_host](const bool preverified, boost::asio::ssl::verify_context& context) {
+            boost::asio::ssl::host_name_verification verify_hostname(expected_host);
+            return verify_hostname(preverified, context) && verify_preverified_and_pin(preverified, context);
+        }
+    );
+
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
+}
+
 bool TlsStream::handshake_client(const std::string_view server_name, std::string* error) {
     auto set_error = [&error](std::string message) {
         if (error != nullptr) {
@@ -160,6 +188,9 @@ bool TlsStream::handshake_client(const std::string_view server_name, std::string
 
     if (!server_name.empty() && !SSL_set_tlsext_host_name(stream_.native_handle(), std::string(server_name).c_str())) {
         set_error("TLS SNI host configuration failed");
+        return false;
+    }
+    if (!set_client_hostname_verification(server_name, error)) {
         return false;
     }
     boost::system::error_code ec;

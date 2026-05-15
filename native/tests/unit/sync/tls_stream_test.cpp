@@ -33,6 +33,7 @@ TEST_CASE("tls stream configure toggles peer verification mode", "[sync][transpo
     secure.verify_peer = true;
     REQUIRE(stream.configure(secure, &error));
     REQUIRE((SSL_get_verify_mode(stream.stream().native_handle()) & SSL_VERIFY_PEER) != 0);
+    REQUIRE(stream.set_client_hostname_verification("example.com", &error));
 }
 
 TEST_CASE("tls stream rejects invalid pinned certificate fingerprint", "[sync][transport][tls]") {

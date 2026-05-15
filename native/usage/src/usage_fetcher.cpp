@@ -12,6 +12,7 @@
 #include <curl/curl.h>
 #include <glaze/glaze.hpp>
 
+#include "net/outbound_proxy.h"
 #include "text/ascii.h"
 
 namespace tightrope::usage {
@@ -381,6 +382,16 @@ UsageHttpResult fetch_usage_http(const std::string_view access_token, const std:
             .status_code = 0,
             .body = {},
             .message = "Usage validator transport unavailable",
+        };
+    }
+    std::string proxy_error;
+    if (!core::net::apply_curl_outbound_proxy(curl, &proxy_error)) {
+        curl_easy_cleanup(curl);
+        return {
+            .transport_ok = false,
+            .status_code = 0,
+            .body = {},
+            .message = "Usage outbound proxy unavailable: " + proxy_error,
         };
     }
 

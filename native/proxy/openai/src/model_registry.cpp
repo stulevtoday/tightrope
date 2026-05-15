@@ -11,6 +11,7 @@
 #include <curl/curl.h>
 #include <glaze/glaze.hpp>
 
+#include "net/outbound_proxy.h"
 #include "text/ascii.h"
 
 namespace tightrope::proxy::openai {
@@ -100,6 +101,11 @@ std::optional<std::string> fetch_models_payload(const HeaderMap& inbound_headers
 
     CURL* curl = curl_easy_init();
     if (curl == nullptr) {
+        return std::nullopt;
+    }
+    std::string proxy_error;
+    if (!core::net::apply_curl_outbound_proxy(curl, &proxy_error)) {
+        curl_easy_cleanup(curl);
         return std::nullopt;
     }
 

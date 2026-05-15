@@ -864,6 +864,38 @@ TEST_CASE("default upstream transport executes real HTTP responses request", "[p
     REQUIRE(server.captured_request().find("POST /codex/responses HTTP/1.1") != std::string::npos);
 }
 
+TEST_CASE("default upstream HTTP transport uses configured outbound HTTP proxy", "[proxy][transport][default][proxy]") {
+    tightrope::proxy::reset_upstream_transport();
+
+    SingleRequestHttpServer proxy{
+        "200 OK",
+        "application/json",
+        R"({"id":"resp_via_outbound_proxy","object":"response","status":"completed","output":[]})",
+    };
+
+    EnvVarGuard base_url_guard("TIGHTROPE_UPSTREAM_BASE_URL");
+    EnvVarGuard outbound_proxy_guard("TIGHTROPE_OUTBOUND_PROXY_URL");
+    REQUIRE(setenv("TIGHTROPE_UPSTREAM_BASE_URL", "http://127.0.0.1:9/backend-api", 1) == 0);
+    const auto proxy_url = std::string("http://127.0.0.1:") + std::to_string(proxy.port());
+    REQUIRE(setenv("TIGHTROPE_OUTBOUND_PROXY_URL", proxy_url.c_str(), 1) == 0);
+
+    const tightrope::proxy::openai::UpstreamRequestPlan plan{
+        .method = "POST",
+        .path = "/codex/responses",
+        .transport = "http-json",
+        .body = R"({"model":"gpt-5","input":"proxied"})",
+        .headers = {{"Content-Type", "application/json"}},
+    };
+
+    const auto result = tightrope::proxy::execute_upstream_plan(plan);
+
+    REQUIRE(result.status == 200);
+    REQUIRE(result.body.find("resp_via_outbound_proxy") != std::string::npos);
+    const auto captured = proxy.captured_request();
+    REQUIRE(captured.find("http://127.0.0.1:9/backend-api/codex/responses") != std::string::npos);
+    REQUIRE(request_body(captured).find("\"proxied\"") != std::string::npos);
+}
+
 TEST_CASE("default upstream transport executes compact path over HTTP", "[proxy][transport][default]") {
     tightrope::proxy::reset_upstream_transport();
 
